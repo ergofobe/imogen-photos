@@ -45,6 +45,7 @@ export function AlbumDetail() {
         className="label-micro mb-4 inline-flex items-center gap-1.5 hover:text-ink"
       >
         <svg
+          aria-hidden="true"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

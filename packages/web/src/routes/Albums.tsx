@@ -46,7 +46,7 @@ export function Albums() {
           className="mb-6 flex gap-2"
         >
           <input
-            autoFocus
+            ref={(node) => node?.focus()}
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Album name"
@@ -71,7 +71,11 @@ export function Albums() {
       {isPending ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="aspect-square animate-pulse rounded-lg bg-sunken" />
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: a fixed skeleton never reorders
+              key={`album-skeleton-${i}`}
+              className="aspect-square animate-pulse rounded-lg bg-sunken"
+            />
           ))}
         </div>
       ) : albums && albums.length > 0 ? (
@@ -104,6 +108,7 @@ function AlbumCard({ album }: { album: Album }) {
         ) : (
           <div className="grid h-full place-items-center">
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"

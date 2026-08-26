@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /*
  * imogen's chrome is deliberately achromatic. Photographs are the only saturated thing
@@ -14,23 +14,23 @@
  */
 
 @font-face {
-  font-family: 'Archivo';
-  src: url('/fonts/archivo-latin.woff2') format('woff2-variations');
+  font-family: "Archivo";
+  src: url("/fonts/archivo-latin.woff2") format("woff2-variations");
   font-weight: 400 700;
   font-stretch: 75% 125%;
   font-display: swap;
 }
 
 @font-face {
-  font-family: 'Plex Mono';
-  src: url('/fonts/plex-mono-latin.woff2') format('woff2');
+  font-family: "Plex Mono";
+  src: url("/fonts/plex-mono-latin.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
 
 @theme {
-  --font-sans: 'Archivo', ui-sans-serif, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-sans: "Archivo", ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --color-paper: #fbfaf7;
   --color-surface: #ffffff;
@@ -126,13 +126,13 @@
 
   /* Archivo is a variable width axis; expanding the wordmark makes it exhibition signage. */
   .wordmark {
-    font-variation-settings: 'wdth' 112;
+    font-variation-settings: "wdth" 112;
     font-weight: 600;
     letter-spacing: -0.015em;
   }
 
   .heading-display {
-    font-variation-settings: 'wdth' 108;
+    font-variation-settings: "wdth" 108;
     font-weight: 600;
     letter-spacing: -0.025em;
     line-height: 1.05;
@@ -164,12 +164,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /*
+   * !important is warranted here and nowhere else: this has to beat utility classes and
+   * inline styles, and someone who asked their operating system to stop animations is
+   * not asking for a best effort.
+   */
   *,
   *::before,
   *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win */
     animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win */
     animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win */
     transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win */
     scroll-behavior: auto !important;
   }
 }

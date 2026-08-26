@@ -31,7 +31,9 @@ export function createApp({ services, webRoot }: AppOptions) {
       const details: Record<string, string[]> = {}
       for (const issue of result.error.issues) {
         const key = issue.path.join('.') || '_'
-        ;(details[key] ??= []).push(issue.message)
+        const messages = details[key] ?? []
+        messages.push(issue.message)
+        details[key] = messages
       }
       return c.json(
         {

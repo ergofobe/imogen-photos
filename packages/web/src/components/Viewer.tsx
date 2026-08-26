@@ -144,7 +144,9 @@ export function Viewer({
           aria-label="Download original"
           className="grid h-9 w-9 place-items-center rounded-full text-white/85 transition hover:bg-white/15 hover:text-white"
         >
+          <span className="sr-only">Download original</span>
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -186,6 +188,7 @@ function NavButton({
       style={{ opacity: visible ? 1 : 0 }}
     >
       <svg
+        aria-hidden="true"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -222,6 +225,7 @@ function IconButton({
       }`}
     >
       <svg
+        aria-hidden="true"
         viewBox="0 0 24 24"
         fill={active ? 'currentColor' : 'none'}
         stroke="currentColor"
@@ -272,6 +276,7 @@ function InfoPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) {
           className="grid h-8 w-8 place-items-center rounded-full text-white/70 hover:bg-white/15 hover:text-white"
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

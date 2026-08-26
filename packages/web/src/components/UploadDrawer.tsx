@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { imogen } from '../lib/client.ts'
 
 type Item = {
+  /** Stable across re-renders: two selected files can share a name. */
+  key: string
   name: string
   state: 'waiting' | 'uploading' | 'done' | 'duplicate' | 'failed'
   error?: string
@@ -26,7 +28,9 @@ export function UploadDrawer({ open, onClose }: { open: boolean; onClose: () => 
     async (files: File[]) => {
       if (files.length === 0) return
       setBusy(true)
-      setItems(files.map((file) => ({ name: file.name, state: 'waiting' })))
+      setItems(
+        files.map((file, i) => ({ key: `${i}-${file.name}`, name: file.name, state: 'waiting' })),
+      )
 
       const byName = new Map(files.map((file, index) => [file, index]))
       await imogen.assets.uploadMany(files, {
@@ -36,6 +40,7 @@ export function UploadDrawer({ open, onClose }: { open: boolean; onClose: () => 
           setItems((current) => {
             const next = [...current]
             next[index] = {
+              key: `${index}-${outcome.file.name}`,
               name: outcome.file.name,
               state: outcome.error ? 'failed' : outcome.result?.duplicate ? 'duplicate' : 'done',
               ...(outcome.error ? { error: outcome.error.message } : {}),
@@ -100,6 +105,7 @@ export function UploadDrawer({ open, onClose }: { open: boolean; onClose: () => 
               className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-sunken hover:text-ink"
             >
               <svg
+                aria-hidden="true"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -123,6 +129,7 @@ export function UploadDrawer({ open, onClose }: { open: boolean; onClose: () => 
               }`}
             >
               <svg
+                aria-hidden="true"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -181,8 +188,8 @@ export function UploadDrawer({ open, onClose }: { open: boolean; onClose: () => 
             </div>
 
             <ul className="max-h-64 space-y-1.5 overflow-y-auto">
-              {items.map((item, index) => (
-                <li key={`${item.name}-${index}`} className="flex items-center gap-2.5 text-sm">
+              {items.map((item) => (
+                <li key={item.key} className="flex items-center gap-2.5 text-sm">
                   <StateDot state={item.state} />
                   <span className="min-w-0 flex-1 truncate">{item.name}</span>
                   {item.state === 'duplicate' && (

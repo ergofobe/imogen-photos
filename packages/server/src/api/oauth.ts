@@ -60,13 +60,14 @@ export function createOAuthRoutes() {
       c.req.raw.headers,
       getCookie(c, SESSION_COOKIE),
     )
-    if (!principal || principal.via !== 'session') {
+    if (principal?.via !== 'session') {
       const returnTo = `/oauth/authorize?${new URLSearchParams(query).toString()}`
       return c.redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`)
     }
 
-    const requested = (query.scope?.split(/\s+/).filter(Boolean) ?? ['library:read']).filter(
-      (s): s is OAuthScope => (ALL_SCOPES as string[]).includes(s),
+    const scopeList = query.scope?.split(/\s+/).filter(Boolean)
+    const requested = (scopeList ?? ['library:read']).filter((s): s is OAuthScope =>
+      (ALL_SCOPES as string[]).includes(s),
     )
     const scopes = requested.length > 0 ? requested : (['library:read'] as OAuthScope[])
 

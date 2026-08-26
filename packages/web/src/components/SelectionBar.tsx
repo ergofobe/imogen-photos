@@ -38,6 +38,7 @@ export function SelectionBar({
             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition hover:bg-sunken"
           >
             <svg
+              aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -59,6 +60,7 @@ export function SelectionBar({
           className="grid h-8 w-8 place-items-center rounded-full text-muted transition hover:bg-sunken hover:text-ink"
         >
           <svg
+            aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
