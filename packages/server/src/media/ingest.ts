@@ -22,7 +22,10 @@ export type IngestInput = {
 export class IngestService {
   constructor(
     private readonly db: Database,
+    /** Originals. Never modified after they land. */
     private readonly storage: StorageDriver,
+    /** Thumbnails and previews, which live apart so they can be regenerated or purged. */
+    private readonly derivatives: StorageDriver,
     private readonly pipeline: MediaPipeline,
     private readonly enqueue: (name: string, payload: Record<string, unknown>) => Promise<string>,
   ) {}
@@ -136,7 +139,7 @@ export class IngestService {
       const buffer = result[variant]
       if (!buffer) continue
       const path = derivativePath(assetId, variant)
-      const stored = await this.storage.write(path, new Blob([new Uint8Array(buffer)]))
+      const stored = await this.derivatives.write(path, new Blob([new Uint8Array(buffer)]))
       written.push({ variant, path: stored.path, size: stored.sizeBytes })
     }
 

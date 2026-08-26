@@ -10,7 +10,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
 import { type AlbumRow, albumAssets, albums, assets, shareLinks } from '../db/schema.ts'
 import { forbidden, notFound } from '../lib/errors.ts'
-import { generateToken, hashToken } from '../lib/tokens.ts'
+import { generateToken } from '../lib/tokens.ts'
 import { toAsset } from './serialize.ts'
 
 function toAlbum(row: AlbumRow, assetCount: number, shareSlug: string | null): Album {
@@ -25,6 +25,12 @@ function toAlbum(row: AlbumRow, assetCount: number, shareSlug: string | null): A
     updatedAt: row.updatedAt.toISOString(),
     shareSlug,
   }
+}
+
+const SHARE_PASSWORD_HASH = { algorithm: 'argon2id', memoryCost: 19456, timeCost: 2 } as const
+
+function hashSharePassword(password: string): Promise<string> {
+  return Bun.password.hash(password, SHARE_PASSWORD_HASH)
 }
 
 export class AlbumService {
@@ -181,7 +187,9 @@ export class AlbumService {
         slug,
         albumId,
         createdBy: ownerId,
-        passwordHash: input.password ? hashToken(input.password) : null,
+        // A share password is chosen by a human, so it needs a salted, slow KDF —
+        // unlike the high-entropy random tokens elsewhere, which SHA-256 handles fine.
+        passwordHash: input.password ? await hashSharePassword(input.password) : null,
         allowDownload: input.allowDownload,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
       })
@@ -214,8 +222,10 @@ export class AlbumService {
       .limit(1)
     if (!link) return null
     if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) return null
-    if (link.passwordHash && (!password || hashToken(password) !== link.passwordHash)) {
-      return { link, locked: true as const, album: null }
+    if (link.passwordHash) {
+      // Bun.password.verify is constant-time, so a wrong guess leaks nothing by timing.
+      const matches = password ? await Bun.password.verify(password, link.passwordHash) : false
+      if (!matches) return { link, locked: true as const, album: null }
     }
 
     const [album] = await this.db.select().from(albums).where(eq(albums.id, link.albumId)).limit(1)

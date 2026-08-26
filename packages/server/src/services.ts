@@ -48,7 +48,7 @@ export function createServices(config: Config, database?: Database): Services {
 
   const assets = new AssetService(db)
   const albums = new AlbumService(db)
-  const ingest = new IngestService(db, library, pipeline, (name, payload) =>
+  const ingest = new IngestService(db, library, thumbnails, pipeline, (name, payload) =>
     queue.enqueue(name, payload),
   )
 

@@ -1,0 +1,177 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { OpenAPIHono } from '@hono/zod-openapi'
+import { ERROR_CODES } from '@imogen/shared'
+import { Scalar } from '@scalar/hono-api-reference'
+import type { Hono } from 'hono'
+import { logger } from 'hono/logger'
+import { secureHeaders } from 'hono/secure-headers'
+import { createAlbumRoutes } from './api/albums.ts'
+import { createAssetRoutes } from './api/assets.ts'
+import { createAuthRoutes } from './api/auth.ts'
+import { createOAuthRoutes, createWellKnownRoutes } from './api/oauth.ts'
+import { createShareRoutes } from './api/share.ts'
+import type { AppEnv } from './auth/middleware.ts'
+import { respondWithError } from './lib/errors.ts'
+import { createMcpRoutes } from './mcp/routes.ts'
+import type { Services } from './services.ts'
+
+export type AppOptions = {
+  services: Services
+  /** Directory holding the built web bundle. Omitted in tests and during `bun dev`. */
+  webRoot?: string
+}
+
+export function createApp({ services, webRoot }: AppOptions) {
+  const app = new OpenAPIHono<AppEnv>({
+    // One place turns a schema failure into the error envelope the SDK expects.
+    defaultHook: (result, c) => {
+      if (result.success) return
+      const details: Record<string, string[]> = {}
+      for (const issue of result.error.issues) {
+        const key = issue.path.join('.') || '_'
+        ;(details[key] ??= []).push(issue.message)
+      }
+      return c.json(
+        {
+          error: {
+            code: ERROR_CODES.VALIDATION_FAILED,
+            message: 'The request did not match what this endpoint expects',
+            details,
+          },
+        },
+        400,
+      )
+    },
+  })
+
+  app.use('*', async (c, next) => {
+    c.set('services', services)
+    await next()
+  })
+
+  if (process.env.NODE_ENV !== 'test') app.use('*', logger())
+
+  app.use(
+    '*',
+    secureHeaders({
+      // The web app is same-origin and self-contained; nothing loads from elsewhere.
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        mediaSrc: ["'self'", 'blob:'],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+      referrerPolicy: 'same-origin',
+      crossOriginEmbedderPolicy: false,
+    }),
+  )
+
+  app.onError((error, c) => respondWithError(c, error))
+
+  // --- Discovery and OAuth, which live at the root because the specs say so ---
+  app.route('/.well-known', createWellKnownRoutes())
+  app.route('/oauth', createOAuthRoutes())
+
+  // --- MCP ---
+  app.route('/mcp', createMcpRoutes())
+
+  // --- Public album shares ---
+  app.route('/api/v1/share', createShareRoutes())
+
+  // --- The versioned API ---
+  const v1 = new OpenAPIHono<AppEnv>()
+  v1.get('/health', (c) => c.json({ status: 'ok', version: VERSION }))
+  v1.route('/auth', createAuthRoutes())
+
+  // Each router applies its own authentication. A wildcard across /api/v1 would also
+  // cover the OpenAPI document and health check, which must stay reachable.
+  v1.route('/assets', createAssetRoutes())
+  v1.route('/albums', createAlbumRoutes())
+
+  app.route('/api/v1', v1)
+
+  app.doc31('/api/v1/openapi.json', (c) => ({
+    openapi: '3.1.0',
+    info: {
+      title: 'imogen',
+      version: VERSION,
+      description:
+        'The imogen photo library API. Authenticate with a session cookie from the web ' +
+        'interface, or with an OAuth 2.1 bearer token obtained through the authorization ' +
+        'server described at /.well-known/oauth-authorization-server.',
+    },
+    servers: [{ url: new URL(c.req.url).origin }],
+  }))
+
+  app.openAPIRegistry.registerComponent('securitySchemes', 'sessionCookie', {
+    type: 'apiKey',
+    in: 'cookie',
+    name: 'imogen_session',
+  })
+  app.openAPIRegistry.registerComponent('securitySchemes', 'oauth2', {
+    type: 'oauth2',
+    flows: {
+      authorizationCode: {
+        authorizationUrl: '/oauth/authorize',
+        tokenUrl: '/oauth/token',
+        scopes: {
+          'library:read': 'View photos and videos',
+          'library:write': 'Upload, edit, and delete photos and videos',
+          'albums:read': 'View albums',
+          'albums:write': 'Create and modify albums',
+          profile: 'Read name and email address',
+        },
+      },
+    },
+  })
+
+  app.get('/api/v1/docs', Scalar({ url: '/api/v1/openapi.json', pageTitle: 'imogen API' }))
+
+  // --- The web application ---
+  if (webRoot) mountWebApp(app, webRoot)
+
+  app.notFound((c) =>
+    c.json({ error: { code: ERROR_CODES.NOT_FOUND, message: `No route for ${c.req.path}` } }, 404),
+  )
+
+  return app
+}
+
+export const VERSION = '0.1.0'
+
+/**
+ * Serves the built single-page app: hashed assets cached forever, everything else
+ * falling through to index.html so client-side routes survive a refresh.
+ */
+function mountWebApp(app: Hono<AppEnv>, webRoot: string) {
+  const indexPath = join(webRoot, 'index.html')
+
+  app.get('*', async (c, next) => {
+    if (c.req.path.startsWith('/api/') || c.req.path.startsWith('/oauth/')) return next()
+
+    const requested = join(webRoot, c.req.path)
+    // Reject traversal before touching the filesystem.
+    if (!requested.startsWith(webRoot)) return next()
+
+    const file = Bun.file(requested)
+    if (c.req.path !== '/' && (await file.exists())) {
+      const immutable = /\/assets\/.+\.[0-9a-f]{8,}\./.test(c.req.path)
+      return new Response(file, {
+        headers: {
+          'Cache-Control': immutable
+            ? 'public, max-age=31536000, immutable'
+            : 'public, max-age=0, must-revalidate',
+        },
+      })
+    }
+
+    if (!existsSync(indexPath)) return next()
+    return new Response(Bun.file(indexPath), {
+      headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' },
+    })
+  })
+}
