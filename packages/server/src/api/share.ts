@@ -77,7 +77,14 @@ export function createShareRoutes() {
   app.get('/:slug', async (c) => {
     const share = await open(c.get('services'), c.req.param('slug'), c)
     if (share === 'locked') return c.json({ locked: true }, 401)
-    return c.json({ locked: false, album: share.album, allowDownload: share.link.allowDownload })
+    return c.json({
+      locked: false,
+      // A single photograph is carried as an album of one so the guards downstream
+      // stay in one place, but the page should not call it an album to the visitor.
+      kind: share.link.assetId ? 'photo' : 'album',
+      album: share.album,
+      allowDownload: share.link.allowDownload,
+    })
   })
 
   app.get('/:slug/assets/:assetId/:variant{preview|thumbnail|original}', async (c) => {

@@ -1,4 +1,5 @@
 import type { Asset } from '@imogen/shared'
+import { useAssetUrls } from '../lib/assetUrls.tsx'
 import { formatDuration } from '../lib/format.ts'
 
 type Props = {
@@ -30,6 +31,7 @@ export function PhotoTile({
   onOpen,
   onToggleSelect,
 }: Props) {
+  const urls = useAssetUrls()
   const pending = asset.status !== 'ready'
 
   return (
@@ -39,7 +41,7 @@ export function PhotoTile({
     >
       {!pending && (
         <img
-          src={`/api/v1/assets/${asset.id}/thumbnail`}
+          src={urls.url(asset.id, 'thumbnail')}
           alt={asset.description ?? asset.originalFilename}
           width={width}
           height={height}

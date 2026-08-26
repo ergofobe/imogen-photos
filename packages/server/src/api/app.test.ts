@@ -763,6 +763,50 @@ describe('sharing a single photograph', () => {
     expect(body.album.assets.map((a) => a.id)).toEqual([asset.id])
   })
 
+  test('every variant the page asks for is served without a session', async () => {
+    const { cookie } = await signUp()
+    const { asset } = await addPhoto(cookie, 'shared.jpg')
+    const created = await jsonRequest(`/api/v1/assets/${asset.id}/share`, 'POST', {}, cookie)
+    const { slug } = (await created.json()) as { slug: string }
+    await services.queue.drain()
+
+    // The grid asks for a thumbnail, the viewer for a preview, the download for the
+    // original. A page that renders with every image missing is what happens when one
+    // of these is only reachable with a session.
+    for (const variant of ['thumbnail', 'preview', 'original']) {
+      const response = await request(`/api/v1/share/${slug}/assets/${asset.id}/${variant}`)
+      expect({ variant, status: response.status }).toEqual({ variant, status: 200 })
+    }
+  })
+
+  test('the original is refused when the link says no downloads', async () => {
+    const { cookie } = await signUp()
+    const { asset } = await addPhoto(cookie, 'shared.jpg')
+    const created = await jsonRequest(
+      `/api/v1/assets/${asset.id}/share`,
+      'POST',
+      { allowDownload: false },
+      cookie,
+    )
+    const { slug } = (await created.json()) as { slug: string }
+    await services.queue.drain()
+
+    expect((await request(`/api/v1/share/${slug}/assets/${asset.id}/preview`)).status).toBe(200)
+    expect((await request(`/api/v1/share/${slug}/assets/${asset.id}/original`)).status).toBe(404)
+  })
+
+  test('the page is told it is a photo, not an album', async () => {
+    const { cookie } = await signUp()
+    const { asset } = await addPhoto(cookie, 'shared.jpg')
+    const created = await jsonRequest(`/api/v1/assets/${asset.id}/share`, 'POST', {}, cookie)
+    const { slug } = (await created.json()) as { slug: string }
+
+    const opened = await request(`/api/v1/share/${slug}`)
+    const body = (await opened.json()) as { kind: string }
+
+    expect(body.kind).toBe('photo')
+  })
+
   test('a slug for one photo is not a key to the rest of the library', async () => {
     const { cookie } = await signUp()
     const shared = await addPhoto(cookie, 'shared.jpg')

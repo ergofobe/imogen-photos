@@ -6,10 +6,16 @@ import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { Viewer } from '../components/Viewer.tsx'
 import { Wordmark } from '../components/Wordmark.tsx'
 import { useViewerParam } from '../hooks/useViewerParam.ts'
+import { ShareAssetUrls } from '../lib/assetUrls.tsx'
 
 type ShareResponse =
   | { locked: true }
-  | { locked: false; album: Album & { assets: Asset[] }; allowDownload: boolean }
+  | {
+      locked: false
+      kind: 'album' | 'photo'
+      album: Album & { assets: Asset[] }
+      allowDownload: boolean
+    }
 
 /** A public album. No account, no session — the slug is the only credential. */
 export function SharedAlbum() {
@@ -77,38 +83,97 @@ export function SharedAlbum() {
   const assets = data.album.assets
   const openIndex = openId ? assets.findIndex((a) => a.id === openId) : -1
 
+  // A filename is an identifier, not a title. Whatever the owner wrote about the
+  // photograph is the better thing to lead with when there is one.
+  const photo = data.kind === 'photo' ? assets[0] : null
+  const title = photo ? (photo.description ?? photo.originalFilename) : data.album.name
+  const subtitle = photo
+    ? new Date(photo.capturedAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : `${assets.length} ${assets.length === 1 ? 'photo' : 'photos'}`
+
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 md:px-8">
-      <header className="mb-7 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="heading-display text-2xl md:text-[28px]">{data.album.name}</h1>
-          <p className="label-micro mt-1">
-            {assets.length} {assets.length === 1 ? 'photo' : 'photos'} · shared album
-          </p>
-        </div>
-        <Wordmark compact />
-      </header>
+    <ShareAssetUrls slug={slug} allowDownload={data.allowDownload}>
+      <div className="flex min-h-dvh flex-col">
+        {/*
+          A stranger opening this link may never have heard of imogen, and this page is
+          the whole of what they see. The mark is stated properly at the top rather
+          than tucked into a corner as a loose glyph.
+        */}
+        <header className="border-b border-line">
+          <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-4 md:px-8">
+            <Wordmark />
+            <span className="label-micro text-muted">
+              {data.kind === 'photo' ? 'A shared photo' : 'A shared album'}
+            </span>
+          </div>
+        </header>
 
-      <PhotoGrid
-        assets={assets}
-        selected={new Set()}
-        onOpen={(asset) => openPhoto(asset.id)}
-        onToggleSelect={() => {}}
-      />
+        <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-8 md:px-8">
+          <div className="mb-7">
+            <h1 className="heading-display text-2xl md:text-[28px]">{title}</h1>
+            {subtitle && <p className="label-micro mt-1">{subtitle}</p>}
+          </div>
 
-      {openIndex >= 0 && assets[openIndex] && (
-        <Viewer
-          asset={assets[openIndex]}
-          hasPrevious={openIndex > 0}
-          hasNext={openIndex < assets.length - 1}
-          onClose={() => closePhoto()}
-          onPrevious={() => showPhoto(assets[openIndex - 1]?.id ?? '')}
-          onNext={() => showPhoto(assets[openIndex + 1]?.id ?? '')}
-          onToggleFavorite={() => {}}
-          onTrash={() => {}}
-          editable={false}
-        />
-      )}
-    </div>
+          {/*
+            One photograph is shown as a photograph. Sending it through the timeline
+            grid gives it a date heading and a row of its own to be small in, which is
+            the layout answering a question nobody asked.
+          */}
+          {data.kind === 'photo' && assets[0] ? (
+            <button
+              type="button"
+              onClick={() => openPhoto(assets[0]!.id)}
+              className="block w-full max-w-3xl overflow-hidden rounded-xl border border-line bg-sunken"
+            >
+              <img
+                src={`/api/v1/share/${slug}/assets/${assets[0].id}/preview`}
+                alt={assets[0].description ?? assets[0].originalFilename}
+                className="h-auto w-full object-contain"
+              />
+            </button>
+          ) : (
+            <PhotoGrid
+              assets={assets}
+              selected={new Set()}
+              onOpen={(asset) => openPhoto(asset.id)}
+              onToggleSelect={() => {}}
+            />
+          )}
+        </main>
+
+        <footer className="border-t border-line">
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-5 md:px-8">
+            <p className="text-sm text-muted">
+              Shared with{' '}
+              <a
+                href="https://github.com/ergofobe/imogen-photos"
+                className="underline decoration-line underline-offset-4 transition hover:text-ink"
+              >
+                imogen
+              </a>
+              , a photo library you run yourself.
+            </p>
+          </div>
+        </footer>
+
+        {openIndex >= 0 && assets[openIndex] && (
+          <Viewer
+            asset={assets[openIndex]}
+            hasPrevious={openIndex > 0}
+            hasNext={openIndex < assets.length - 1}
+            onClose={() => closePhoto()}
+            onPrevious={() => showPhoto(assets[openIndex - 1]?.id ?? '')}
+            onNext={() => showPhoto(assets[openIndex + 1]?.id ?? '')}
+            onToggleFavorite={() => {}}
+            onTrash={() => {}}
+            editable={false}
+          />
+        )}
+      </div>
+    </ShareAssetUrls>
   )
 }

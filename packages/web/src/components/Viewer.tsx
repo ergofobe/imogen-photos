@@ -1,5 +1,6 @@
 import type { Asset, DetectedFace } from '@imogen/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAssetUrls } from '../lib/assetUrls.tsx'
 import { formatAperture, formatBytes, formatShutter } from '../lib/format.ts'
 import { CaptureDate } from './CaptureDate.tsx'
 import { FaceHighlight } from './FaceHighlight.tsx'
@@ -33,6 +34,7 @@ export function Viewer({
   onTrash,
   editable = true,
 }: Props) {
+  const urls = useAssetUrls()
   const isVideo = asset.type === 'video'
   const imageRef = useRef<HTMLImageElement>(null)
   const [highlighted, setHighlighted] = useState<DetectedFace | null>(null)
@@ -70,11 +72,11 @@ export function Viewer({
       if (event.key === 'ArrowLeft') return onMedia ? undefined : onPrevious()
       if (event.key === 'ArrowRight') return onMedia ? undefined : onNext()
       if (event.key === 'i') return setShowInfo((v) => !v)
-      if (event.key === 'f') return onToggleFavorite(asset)
+      if (event.key === 'f' && editable) return onToggleFavorite(asset)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [asset, onClose, onNext, onPrevious, onToggleFavorite, showInfo])
+  }, [asset, editable, onClose, onNext, onPrevious, onToggleFavorite, showInfo])
 
   // Swipe between photos on a phone, which is how people actually flick through a roll.
   const touchStart = useRef<{ x: number; y: number } | null>(null)
@@ -125,8 +127,8 @@ export function Viewer({
             // The original is served with range support, so scrubbing works.
             <video
               key={asset.id}
-              src={`/api/v1/assets/${asset.id}/original`}
-              poster={`/api/v1/assets/${asset.id}/preview`}
+              src={urls.url(asset.id, 'original')}
+              poster={urls.url(asset.id, 'preview')}
               controls
               playsInline
               preload="metadata"
@@ -138,7 +140,7 @@ export function Viewer({
             <img
               key={asset.id}
               ref={imageRef}
-              src={`/api/v1/assets/${asset.id}/preview`}
+              src={urls.url(asset.id, 'preview')}
               alt={asset.description ?? asset.originalFilename}
               className="max-h-full max-w-full object-contain drop-shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
             />
@@ -179,20 +181,23 @@ export function Viewer({
           {asset.originalFilename}
         </p>
 
-        <IconButton
-          onClick={() => onToggleFavorite(asset)}
-          label={asset.favorite ? 'Remove from favourites' : 'Add to favourites'}
-          active={asset.favorite}
-        >
-          <path d="M12 20.3 4.6 13a4.6 4.6 0 0 1 6.5-6.5l.9.9.9-.9A4.6 4.6 0 0 1 19.4 13Z" />
-        </IconButton>
+        {editable && (
+          <IconButton
+            onClick={() => onToggleFavorite(asset)}
+            label={asset.favorite ? 'Remove from favourites' : 'Add to favourites'}
+            active={asset.favorite}
+          >
+            <path d="M12 20.3 4.6 13a4.6 4.6 0 0 1 6.5-6.5l.9.9.9-.9A4.6 4.6 0 0 1 19.4 13Z" />
+          </IconButton>
+        )}
         <IconButton onClick={() => setShowInfo((v) => !v)} label="Photo details" active={showInfo}>
           <path d="M12 11v6M12 7.5v.01" />
         </IconButton>
         <a
-          href={`/api/v1/assets/${asset.id}/download`}
+          href={urls.downloadUrl?.(asset.id) ?? ''}
           download
           aria-label="Download original"
+          hidden={!urls.downloadUrl}
           className="grid h-9 w-9 place-items-center rounded-full text-white/85 transition hover:bg-white/15 hover:text-white"
         >
           <span className="sr-only">Download original</span>
@@ -209,9 +214,11 @@ export function Viewer({
             <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" />
           </svg>
         </a>
-        <IconButton onClick={() => onTrash(asset)} label="Move to trash">
-          <path d="M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12" />
-        </IconButton>
+        {editable && (
+          <IconButton onClick={() => onTrash(asset)} label="Move to trash">
+            <path d="M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12" />
+          </IconButton>
+        )}
       </header>
     </div>
   )
