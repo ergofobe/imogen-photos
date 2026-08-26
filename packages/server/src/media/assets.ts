@@ -108,7 +108,10 @@ export class AssetService {
   }
 
   private buildFilters(ownerId: string, query: AssetQuery): SQL[] {
-    const conditions: SQL[] = [eq(assets.ownerId, ownerId)]
+    // The vault is not a filter anyone can turn off. Assets inside it are excluded from
+    // every ordinary listing, search, and count; the only way to see them is through
+    // VaultService, which requires a freshly unlocked session.
+    const conditions: SQL[] = [eq(assets.ownerId, ownerId), isNull(assets.vaultedAt)]
 
     conditions.push(query.trashed ? isNotNull(assets.deletedAt) : isNull(assets.deletedAt))
 
@@ -149,15 +152,23 @@ export class AssetService {
     return conditions
   }
 
-  async get(ownerId: string, assetId: string): Promise<Asset> {
+  /**
+   * Fetching a single asset by id. Vaulted assets stay hidden unless the caller has
+   * already proved the vault is unlocked — otherwise knowing an id would be enough to
+   * read a photo somebody deliberately put away.
+   */
+  async get(ownerId: string, assetId: string, options: { includeVaulted?: boolean } = {}) {
     const [row] = await this.db.select().from(assets).where(eq(assets.id, assetId)).limit(1)
     if (!row) throw notFound('No such photo')
     if (row.ownerId !== ownerId) throw forbidden('That photo belongs to someone else')
+    if (row.vaultedAt && !options.includeVaulted) {
+      throw forbidden('That photo is in the vault')
+    }
     return toAsset(row)
   }
 
   async update(ownerId: string, assetId: string, patch: AssetUpdate): Promise<Asset> {
-    await this.get(ownerId, assetId)
+    await this.get(ownerId, assetId, { includeVaulted: true })
 
     const [row] = await this.db
       .update(assets)
@@ -213,7 +224,14 @@ export class AssetService {
         count: sql<number>`count(*)::int`,
       })
       .from(assets)
-      .where(and(eq(assets.ownerId, ownerId), isNull(assets.deletedAt), eq(assets.archived, false)))
+      .where(
+        and(
+          eq(assets.ownerId, ownerId),
+          isNull(assets.deletedAt),
+          isNull(assets.vaultedAt),
+          eq(assets.archived, false),
+        ),
+      )
       .groupBy(sql`1`)
       .orderBy(sql`1 desc`)
     return rows.map((r) => ({ date: r.date, count: Number(r.count) }))
@@ -233,7 +251,7 @@ export class AssetService {
         latest: sql<Date | null>`max(${assets.capturedAt}) filter (where ${assets.deletedAt} is null)`,
       })
       .from(assets)
-      .where(eq(assets.ownerId, ownerId))
+      .where(and(eq(assets.ownerId, ownerId), isNull(assets.vaultedAt)))
 
     const [albumRow] = await this.db
       .select({ count: sql<number>`count(*)::int` })

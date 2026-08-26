@@ -12,6 +12,7 @@ import { Login } from './routes/Login.tsx'
 import { Settings } from './routes/Settings.tsx'
 import { SharedAlbum } from './routes/SharedAlbum.tsx'
 import { Timeline } from './routes/Timeline.tsx'
+import { VaultRoute } from './routes/VaultRoute.tsx'
 import './styles.css'
 
 const queryClient = new QueryClient({
@@ -109,6 +110,7 @@ function App() {
         />
         <Route path="/albums" element={<Albums />} />
         <Route path="/albums/:id" element={<AlbumDetail />} />
+        <Route path="/vault" element={<VaultRoute />} />
         <Route path="/settings" element={<Settings user={user} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

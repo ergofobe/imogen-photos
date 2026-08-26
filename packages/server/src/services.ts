@@ -11,6 +11,7 @@ import { AssetService } from './media/assets.ts'
 import { INGEST_JOB, IngestService } from './media/ingest.ts'
 import { MediaPipeline } from './media/pipeline.ts'
 import { LocalStorage } from './media/storage.ts'
+import { VaultService } from './vault/vault.ts'
 
 export type Services = {
   config: Config
@@ -22,6 +23,7 @@ export type Services = {
   oidc: OidcService | null
   assets: AssetService
   albums: AlbumService
+  vault: VaultService
   ingest: IngestService
   library: LocalStorage
   thumbnails: LocalStorage
@@ -49,6 +51,7 @@ export function createServices(config: Config, database?: Database): Services {
 
   const assets = new AssetService(db)
   const albums = new AlbumService(db)
+  const vault = new VaultService(db, { secret: config.secret })
   const ingest = new IngestService(db, library, thumbnails, pipeline, (name, payload) =>
     queue.enqueue(name, payload),
   )
@@ -70,6 +73,7 @@ export function createServices(config: Config, database?: Database): Services {
     oidc,
     assets,
     albums,
+    vault,
     ingest,
     library,
     thumbnails,

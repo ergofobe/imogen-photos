@@ -16,6 +16,7 @@ your AI assistants can search the library too.
   Keycloak, Google, or anything else that speaks OIDC
 - **Built to be built on** — OpenAPI, an SDK, and an OAuth 2.1 server, so a third-party
   app is a first-class citizen rather than an afterthought
+- **A vault** — photos that need a passphrase to see, hidden from everything else
 - **Agent-ready** — connect Claude or Grok to your library with a URL
 
 ---
@@ -78,6 +79,30 @@ photos.example.com {
 
 ---
 
+## The vault
+
+Some photographs should not be one careless scroll away. Move them to the vault and they
+leave the library completely: not the timeline, not search, not your albums, not a shared
+link, and not anything an AI assistant can see.
+
+Opening it needs a passphrase, entered again even though you are already signed in.
+
+A few decisions worth knowing about:
+
+- **The passphrase is not your account password.** Single sign-on accounts have no local
+  password, and more to the point, a session that is already signed in should not be
+  enough — finding your laptop open should not open this too.
+- **Only a browser session can open it.** An API token or an MCP connector can hold
+  perfectly valid credentials and still have no way in. That is by construction, not by
+  omission.
+- **It closes itself** after fifteen minutes, or immediately when you ask it to.
+- **Nobody can reset it for you.** There is no recovery path, which is the point.
+
+Moving a photo into the vault also removes it from every album, since an album is
+something you can share.
+
+---
+
 ## Connecting an AI assistant
 
 imogen speaks MCP, so an assistant can search your library, look at a photo, and manage
@@ -107,7 +132,8 @@ imogen-mcp login --server https://photos.example.com
 | `list_albums` · `get_album` | `albums:read` |
 | `create_album` · `add_to_album` | `albums:write` |
 
-Every tool is scoped to the connected account. There is no tool that deletes anything.
+Every tool is scoped to the connected account. There is no tool that deletes anything, and
+nothing in the vault is visible to any of them.
 
 ---
 

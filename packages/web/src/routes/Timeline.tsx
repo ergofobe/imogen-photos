@@ -1,6 +1,7 @@
 import type { Asset, AssetQuery } from '@imogen/shared'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { SelectionBar } from '../components/SelectionBar.tsx'
@@ -55,6 +56,26 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
 
   const trash = useMutation({
     mutationFn: (assetIds: string[]) => imogen.assets.trash(assetIds),
+    onSuccess: () => {
+      clear()
+      refresh()
+    },
+  })
+
+  /**
+   * Moving into the vault needs the vault open. If it is locked we send the user to the
+   * vault to unlock rather than asking for a passphrase inside a toolbar.
+   */
+  const navigate = useNavigate()
+  const toVault = useMutation({
+    mutationFn: async (assetIds: string[]) => {
+      const status = await imogen.vault.status()
+      if (!status.configured || !status.unlocked) {
+        navigate('/vault')
+        return { moved: 0 }
+      }
+      return imogen.vault.moveIn(assetIds)
+    },
     onSuccess: () => {
       clear()
       refresh()
@@ -124,6 +145,11 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
                   },
                 ]
               : [
+                  {
+                    label: 'Move to vault',
+                    onClick: () => toVault.mutate([...selected]),
+                    icon: 'M4 11h16v9H4zM8 11V7a4 4 0 0 1 8 0v4',
+                  },
                   {
                     label: 'Move to trash',
                     onClick: () => trash.mutate([...selected]),

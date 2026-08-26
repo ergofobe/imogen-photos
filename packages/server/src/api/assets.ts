@@ -17,6 +17,7 @@ import { type AppEnv, requireAuth, requireScope } from '../auth/middleware.ts'
 import { assetFiles, assets } from '../db/schema.ts'
 import { badRequest, notFound } from '../lib/errors.ts'
 import { ERROR_RESPONSES, ok, security } from './openapi.ts'
+import { assertVaultAccess, vaultIsOpen } from './vault.ts'
 
 const IdParam = z.object({ id: z.uuid() })
 const IdsBody = z.object({ assetIds: z.array(z.uuid()).min(1).max(1000) })
@@ -155,7 +156,10 @@ export function createAssetRoutes() {
     }),
     async (c) => {
       const services = c.get('services')
-      const asset = await services.assets.get(c.get('principal').user.id, c.req.valid('param').id)
+      // A vaulted asset is readable by id only while the vault is open.
+      const asset = await services.assets.get(c.get('principal').user.id, c.req.valid('param').id, {
+        includeVaulted: vaultIsOpen(c),
+      })
       return c.json(asset, 200)
     },
   )
@@ -235,7 +239,10 @@ export function createAssetRoutes() {
     const assetId = c.req.param('id')
     const variant = AssetVariant.parse(c.req.param('variant'))
 
-    const asset = await services.assets.get(c.get('principal').user.id, assetId)
+    await assertVaultAccess(services, c, assetId)
+    const asset = await services.assets.get(c.get('principal').user.id, assetId, {
+      includeVaulted: true,
+    })
 
     const [file] = await services.db
       .select()
@@ -274,7 +281,10 @@ export function createAssetRoutes() {
 
   app.get('/:id/download', requireScope('library:read'), async (c) => {
     const services = c.get('services')
-    const asset = await services.assets.get(c.get('principal').user.id, c.req.param('id'))
+    await assertVaultAccess(services, c, c.req.param('id'))
+    const asset = await services.assets.get(c.get('principal').user.id, c.req.param('id'), {
+      includeVaulted: true,
+    })
     const [row] = await services.db.select().from(assets).where(eq(assets.id, asset.id)).limit(1)
     if (!row) throw notFound('No such photo')
 

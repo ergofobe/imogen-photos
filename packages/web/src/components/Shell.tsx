@@ -1,7 +1,7 @@
 import type { User } from '@imogen/shared'
 import { NavLink, useNavigate } from 'react-router'
-import { useTheme } from '../hooks/useTheme.ts'
 import { imogen } from '../lib/client.ts'
+import { ThemeSwitch } from './ThemeSwitch.tsx'
 import { Wordmark } from './Wordmark.tsx'
 
 type Props = { user: User; children: React.ReactNode; onUpload: () => void }
@@ -17,9 +17,12 @@ const NAV = [
   { to: '/trash', label: 'Trash', icon: 'M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12' },
 ]
 
+// The vault sits apart from the browsing destinations: it is a different place, not
+// another view of the same library.
+const VAULT = { to: '/vault', label: 'Vault', icon: 'M4 11h16v9H4zM8 11V7a4 4 0 0 1 8 0v4' }
+
 export function Shell({ user, children, onUpload }: Props) {
   const navigate = useNavigate()
-  const { dark, toggle } = useTheme()
 
   return (
     <div className="min-h-dvh">
@@ -59,30 +62,38 @@ export function Shell({ user, children, onUpload }: Props) {
           ))}
         </nav>
 
+        <NavLink
+          to={VAULT.to}
+          className={({ isActive }) =>
+            `group relative mt-4 flex items-center gap-3 rounded-lg border border-line px-3 py-2 text-sm transition ${
+              isActive ? 'bg-sunken text-ink' : 'text-muted hover:bg-sunken/60 hover:text-ink'
+            }`
+          }
+        >
+          {({ isActive }) => (
+            <>
+              <span
+                aria-hidden="true"
+                className="absolute left-0 h-4 w-[3px] rounded-r-full bg-safelight transition-opacity"
+                style={{ opacity: isActive ? 1 : 0 }}
+              />
+              <Icon path={VAULT.icon} />
+              {VAULT.label}
+            </>
+          )}
+        </NavLink>
+
         <button
           type="button"
           onClick={onUpload}
-          className="mt-5 flex items-center justify-center gap-2 rounded-lg bg-ink px-3 py-2.5 text-sm font-medium text-paper transition hover:opacity-90"
+          className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-ink px-3 py-2.5 text-sm font-medium text-paper transition hover:opacity-90"
         >
           <Icon path="M12 5v14M5 12h14" />
           Add photos
         </button>
 
         <div className="mt-auto space-y-1 pt-5">
-          <button
-            type="button"
-            onClick={toggle}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted transition hover:bg-sunken/60 hover:text-ink"
-          >
-            <Icon
-              path={
-                dark
-                  ? 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.4 6.4-.7-.7M6.3 6.3l-.7-.7m12.8 0-.7.7M6.3 17.7l-.7.7M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0'
-                  : 'M20 14.5A8 8 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5'
-              }
-            />
-            {dark ? 'Light' : 'Dark'}
-          </button>
+          <ThemeSwitch />
 
           <NavLink
             to="/settings"

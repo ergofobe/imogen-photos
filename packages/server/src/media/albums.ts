@@ -77,7 +77,9 @@ export class AlbumService {
       .select({ asset: assets })
       .from(albumAssets)
       .innerJoin(assets, eq(assets.id, albumAssets.assetId))
-      .where(and(eq(albumAssets.albumId, albumId), isNull(assets.deletedAt)))
+      .where(
+        and(eq(albumAssets.albumId, albumId), isNull(assets.deletedAt), isNull(assets.vaultedAt)),
+      )
       .orderBy(albumAssets.position, desc(assets.capturedAt))
     return { ...album, assets: rows.map((r) => toAsset(r.asset)) }
   }
@@ -125,7 +127,9 @@ export class AlbumService {
     const owned = await this.db
       .select({ id: assets.id })
       .from(assets)
-      .where(and(eq(assets.ownerId, ownerId), inArray(assets.id, assetIds)))
+      .where(
+        and(eq(assets.ownerId, ownerId), inArray(assets.id, assetIds), isNull(assets.vaultedAt)),
+      )
     const ownedIds = owned.map((a) => a.id)
 
     const [maxPosition] = await this.db
@@ -230,7 +234,13 @@ export class AlbumService {
       .select({ asset: assets })
       .from(albumAssets)
       .innerJoin(assets, eq(assets.id, albumAssets.assetId))
-      .where(and(eq(albumAssets.albumId, link.albumId), isNull(assets.deletedAt)))
+      .where(
+        and(
+          eq(albumAssets.albumId, link.albumId),
+          isNull(assets.deletedAt),
+          isNull(assets.vaultedAt),
+        ),
+      )
       .orderBy(albumAssets.position)
 
     return {

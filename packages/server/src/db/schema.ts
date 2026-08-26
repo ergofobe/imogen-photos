@@ -51,6 +51,14 @@ export const users = pgTable(
     passwordHash: text('password_hash'),
     oidcSubject: text('oidc_subject'),
     avatarUrl: text('avatar_url'),
+    /**
+     * The vault's own passphrase, separate from the account password on purpose: SSO
+     * users have no local password, and a borrowed unlocked session should not open it.
+     */
+    vaultPassphraseHash: text('vault_passphrase_hash'),
+    /** Throttles guessing. Cleared on a successful unlock. */
+    vaultFailedAttempts: integer('vault_failed_attempts').notNull().default(0),
+    vaultLockedUntil: timestamp('vault_locked_until', { withTimezone: true }),
     quotaBytes: bigint('quota_bytes', { mode: 'number' }),
     usedBytes: bigint('used_bytes', { mode: 'number' }).notNull().default(0),
     createdAt,
@@ -133,6 +141,8 @@ export const assets = pgTable(
           setweight(to_tsvector('simple', coalesce(place, '')), 'B') ||
           setweight(to_tsvector('simple', coalesce(exif->>'make', '') || ' ' || coalesce(exif->>'model', '')), 'C')`,
     ),
+    /** Non-null means the asset lives in the vault and is hidden from everything else. */
+    vaultedAt: timestamp('vaulted_at', { withTimezone: true }),
     processingError: text('processing_error'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt,
@@ -147,7 +157,10 @@ export const assets = pgTable(
     // The timeline's only hot query: owner's live assets, newest first, tie-broken by id.
     index('assets_timeline_idx')
       .on(t.ownerId, t.capturedAt.desc(), t.id.desc())
-      .where(sql`${t.deletedAt} is null`),
+      .where(sql`${t.deletedAt} is null and ${t.vaultedAt} is null`),
+    index('assets_vault_idx')
+      .on(t.ownerId, t.capturedAt.desc(), t.id.desc())
+      .where(sql`${t.vaultedAt} is not null`),
     index('assets_owner_status_idx').on(t.ownerId, t.status),
     index('assets_deleted_at_idx').on(t.deletedAt).where(sql`${t.deletedAt} is not null`),
     index('assets_search_idx').using('gin', t.searchVector),
