@@ -18,6 +18,10 @@ your AI assistants can search the library too.
   app is a first-class citizen rather than an afterthought
 - **People** — optional face grouping, running entirely on your own server
 - **A vault** — photos that need a passphrase to see, hidden from everything else
+- **Sharing** — publish an album or a single photograph as a link, with an optional
+  password, an expiry date, and downloads on or off
+- **Administration** — invite people, suspend accounts, watch the processing queue,
+  disconnect apps, and see everything that is currently public
 - **Agent-ready** — connect Claude or Grok to your library with a URL
 
 ---
@@ -45,9 +49,23 @@ boot on a bad configuration rather than failing later under load.
 | `DATABASE_URL` | — | Postgres connection string. Required. |
 | `IMOGEN_DATA_DIR` | `/data` | Where photographs live. Back this up. |
 | `IMOGEN_SECRET` | generated | Signs sessions. Generated and persisted on first run if unset. |
-| `IMOGEN_ALLOW_SIGNUP` | `true` | Whether anyone may create an account. The first account is always allowed. |
-| `IMOGEN_TRASH_RETENTION_DAYS` | `30` | How long deleted photos are recoverable. |
+| `IMOGEN_ALLOW_SIGNUP` | `true` | Whether anyone may create an account. The first account is always allowed. A starting value only — an administrator can change this in the app, and what they set wins. |
+| `IMOGEN_TRASH_RETENTION_DAYS` | `30` | How long deleted photos are recoverable. Also a starting value that an administrator can change. |
 | `IMOGEN_JOB_CONCURRENCY` | `4` | Photos processed at once. Raise it on a machine with cores to spare. |
+
+### Administration
+
+The first account created becomes the administrator. Its Settings page has a link
+through to `/admin`, which is where accounts, invitations, the processing queue,
+connected applications, storage and share links are managed.
+
+The area is not merely closed to everyone else — it answers a plain 404, identical to
+the one the server gives for a path it has never heard of, so it cannot be found by
+looking for it. Anything scanning for an administration panel is told nothing.
+
+To add somebody to a closed server, make an invitation and send them the link. The
+link is shown once and stored only as a hash, so if it is lost, revoke it and make
+another.
 
 ### Single sign-on
 
