@@ -23,16 +23,27 @@ export async function detect(
   imagePath: string,
   threshold = 0.5,
 ): Promise<{ faces: Face[]; scale: number; width: number; height: number }> {
+  /*
+   * `.rotate()` with no argument applies the EXIF orientation, so detection sees the
+   * photo the right way up — the same way the preview and every viewer does. Without it,
+   * coordinates come back in the stored frame, and a box drawn over a rotated photo
+   * lands somewhere else entirely.
+   */
+  const upright = () => sharp(imagePath).rotate()
+
   const meta = await sharp(imagePath).metadata()
-  const width = meta.width!
-  const height = meta.height!
+  // Orientations 5 to 8 involve a quarter turn, so the upright image is the stored one
+  // transposed. Reading the tag is far cheaper than decoding the pixels to find out.
+  const turned = (meta.orientation ?? 1) >= 5
+  const width = turned ? meta.height! : meta.width!
+  const height = turned ? meta.width! : meta.height!
 
   // Letterbox into a square, keeping aspect so the boxes map back cleanly.
   const scale = INPUT / Math.max(width, height)
   const resizedW = Math.round(width * scale)
   const resizedH = Math.round(height * scale)
 
-  const { data } = await sharp(imagePath)
+  const { data } = await upright()
     .resize(resizedW, resizedH, { fit: 'fill' })
     .extend({
       top: 0,

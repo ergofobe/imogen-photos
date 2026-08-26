@@ -111,6 +111,47 @@ describe.skipIf(!canRun)('detecting faces', () => {
     expect(face!.score).toBeGreaterThan(0.65)
   })
 
+  /**
+   * Face coordinates are drawn over the preview, which has EXIF orientation baked in.
+   * If detection reads the stored frame instead of the upright one, the box lands
+   * somewhere else — and on a quarter-turned photo it does not even fit the dimensions
+   * the rest of the app reports.
+   */
+  test('a rotated photo’s coordinates fit the upright image', async () => {
+    counter++
+    const relative = `${ownerId}/rotated.jpg`
+    await mkdir(join(config.libraryDir, ownerId), { recursive: true })
+    // Orientation 6 means "turn a quarter clockwise to display".
+    await sharp(join(FACE_FIXTURES, 'person-a.png'))
+      .resize(900, 600, { fit: 'cover' })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toFile(join(config.libraryDir, relative))
+
+    const [asset] = await db
+      .insert(assets)
+      .values({
+        ownerId,
+        type: 'image',
+        status: 'ready',
+        originalFilename: 'rotated.jpg',
+        mimeType: 'image/jpeg',
+        checksum: 'd'.repeat(64),
+        sizeBytes: 5000,
+        originalPath: relative,
+        capturedAt: new Date(),
+      })
+      .returning()
+
+    await service.processAsset(asset!.id)
+    const [face] = await service.facesForAsset(ownerId, asset!.id)
+    expect(face).toBeDefined()
+
+    // Upright, the 900x600 photo displays as 600x900.
+    expect(face!.x + face!.width).toBeLessThanOrEqual(600)
+    expect(face!.y + face!.height).toBeLessThanOrEqual(900)
+  })
+
   test('a photo with no faces is not scanned again on the next pass', async () => {
     counter++
     const relative = `${ownerId}/empty.png`

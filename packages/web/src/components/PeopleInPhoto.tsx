@@ -15,9 +15,12 @@ import { imogen } from '../lib/client.ts'
 export function PeopleInPhoto({
   assetId,
   onNavigate,
+  onHighlight,
 }: {
   assetId: string
   onNavigate: () => void
+  /** Pointing at a name shows which face it belongs to. */
+  onHighlight?: (face: DetectedFace | null) => void
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -61,7 +64,13 @@ export function PeopleInPhoto({
 
       <ul className="flex flex-wrap gap-2">
         {faces.map((face) => (
-          <li key={face.id}>
+          <li
+            key={face.id}
+            onMouseEnter={() => onHighlight?.(face)}
+            onMouseLeave={() => onHighlight?.(null)}
+            onFocus={() => onHighlight?.(face)}
+            onBlur={() => onHighlight?.(null)}
+          >
             {namingFace === face.id ? (
               <form
                 onSubmit={(event) => {

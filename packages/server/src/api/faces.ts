@@ -259,16 +259,18 @@ export function createFaceRoutes() {
     // A little margin, so the crop reads as a portrait rather than a cut-out.
     const margin = Math.round(Math.max(face.width, face.height) * 0.25)
     const source = services.library.absolutePath(file.path)
-    const meta = await sharp(source).metadata()
+    // Rotated first: the stored coordinates are in the upright frame, as detection saw it.
+    const upright = await sharp(source).rotate().toBuffer({ resolveWithObject: true })
+    const meta = upright.info
     const left = Math.max(0, face.x - margin)
     const top = Math.max(0, face.y - margin)
 
-    const crop = await sharp(source)
+    const crop = await sharp(upright.data)
       .extract({
         left,
         top,
-        width: Math.min(face.width + margin * 2, (meta.width ?? 0) - left),
-        height: Math.min(face.height + margin * 2, (meta.height ?? 0) - top),
+        width: Math.min(face.width + margin * 2, meta.width - left),
+        height: Math.min(face.height + margin * 2, meta.height - top),
       })
       .resize(160, 160, { fit: 'cover' })
       .webp({ quality: 80 })

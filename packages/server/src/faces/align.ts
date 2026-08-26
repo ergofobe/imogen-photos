@@ -64,7 +64,9 @@ export async function alignFace(
   imagePath: string,
   landmarks: Array<[number, number]>,
 ): Promise<Float32Array> {
+  // Upright, to match the frame the landmarks were detected in.
   const { data, info } = await sharp(imagePath)
+    .rotate()
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true })

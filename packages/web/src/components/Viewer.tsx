@@ -1,6 +1,7 @@
-import type { Asset } from '@imogen/shared'
+import type { Asset, DetectedFace } from '@imogen/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatAperture, formatBytes, formatExact, formatShutter } from '../lib/format.ts'
+import { FaceHighlight } from './FaceHighlight.tsx'
 import { PeopleInPhoto } from './PeopleInPhoto.tsx'
 
 type Props = {
@@ -27,6 +28,8 @@ export function Viewer({
   onTrash,
 }: Props) {
   const isVideo = asset.type === 'video'
+  const imageRef = useRef<HTMLImageElement>(null)
+  const [highlighted, setHighlighted] = useState<DetectedFace | null>(null)
   const [showInfo, setShowInfo] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -45,6 +48,12 @@ export function Viewer({
     wake()
     return () => clearTimeout(idleTimer.current)
   }, [wake])
+
+  // A highlight belongs to one photograph; stepping to the next clears it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the photo, not the setter
+  useEffect(() => {
+    setHighlighted(null)
+  }, [asset.id])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -122,6 +131,7 @@ export function Viewer({
           ) : (
             <img
               key={asset.id}
+              ref={imageRef}
               src={`/api/v1/assets/${asset.id}/preview`}
               alt={asset.description ?? asset.originalFilename}
               className="max-h-full max-w-full object-contain drop-shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
@@ -136,8 +146,19 @@ export function Viewer({
           )}
         </div>
 
-        {showInfo && <InfoPanel asset={asset} onClose={() => setShowInfo(false)} />}
+        {showInfo && (
+          <InfoPanel
+            asset={asset}
+            onClose={() => {
+              setHighlighted(null)
+              setShowInfo(false)
+            }}
+            onHighlight={setHighlighted}
+          />
+        )}
       </div>
+
+      <FaceHighlight face={highlighted} asset={asset} imageRef={imageRef} />
 
       <header
         className="absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/70 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-opacity duration-300"
@@ -263,7 +284,15 @@ function IconButton({
   )
 }
 
-function InfoPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) {
+function InfoPanel({
+  asset,
+  onClose,
+  onHighlight,
+}: {
+  asset: Asset
+  onClose: () => void
+  onHighlight: (face: DetectedFace | null) => void
+}) {
   const exif = asset.exif
   const rows: Array<[string, string]> = [
     ['Taken', formatExact(asset.capturedAt)],
@@ -324,7 +353,7 @@ function InfoPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) {
         ))}
       </dl>
 
-      <PeopleInPhoto assetId={asset.id} onNavigate={onClose} />
+      <PeopleInPhoto assetId={asset.id} onNavigate={onClose} onHighlight={onHighlight} />
 
       {asset.description && (
         <p className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed text-white/80">
