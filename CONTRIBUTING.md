@@ -15,10 +15,12 @@ bun run dev      # and, in another terminal, bun run dev:web
 ## Before you open a pull request
 
 ```bash
-bun run lint
-bun run typecheck
-bun test
+bun run verify
 ```
+
+That runs lint, typecheck, and the test suite, and fails on the first
+problem. Run it as one command rather than three: `bun test` does not
+typecheck, so a suite that passes can still be hiding a type error.
 
 ## How this codebase is tested
 

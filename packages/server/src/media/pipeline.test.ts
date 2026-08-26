@@ -68,13 +68,12 @@ const heicEncoder = (await hasCommand('sips'))
     ? 'heif-enc'
     : null
 const exiftoolAvailable = await hasCommand('exiftool')
-let heicAvailable = false
 
 beforeAll(async () => {
   jpegPath = await makeJpeg(join(workDir, 'photo.jpg'))
 
   heicPath = join(workDir, 'photo.heic')
-  heicAvailable = await encodeHeic(jpegPath, heicPath)
+  await encodeHeic(jpegPath, heicPath)
 
   videoPath = join(workDir, 'clip.mp4')
   await Bun.$`ffmpeg -y -loglevel error -f lavfi -i testsrc=duration=2:size=640x480:rate=24 -pix_fmt yuv420p ${videoPath}`
