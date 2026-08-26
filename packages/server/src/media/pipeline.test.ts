@@ -69,6 +69,20 @@ const heicEncoder = (await hasCommand('sips'))
     : null
 const exiftoolAvailable = await hasCommand('exiftool')
 
+/**
+ * A large HEIC, built once at module scope. `test.skipIf` is evaluated while this file is
+ * read, so anything it depends on has to exist by then — and encoding can fail outright
+ * on a machine whose HEVC encoder is unusable, which is a missing fixture rather than a
+ * defect in the decoder under test.
+ */
+const tiledHeicPath = join(workDir, 'tiled.heic')
+const tiledHeicAvailable = await (async () => {
+  if (heicEncoder === null) return false
+  const source = join(workDir, 'tiled-source.jpg')
+  await makeJpeg(source, 3000, 2000)
+  return encodeHeic(source, tiledHeicPath)
+})()
+
 beforeAll(async () => {
   jpegPath = await makeJpeg(join(workDir, 'photo.jpg'))
 
