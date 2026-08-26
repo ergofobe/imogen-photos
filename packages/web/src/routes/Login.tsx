@@ -25,19 +25,22 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
   const params = new URLSearchParams(window.location.search)
   const returnTo = params.get('returnTo') ?? '/'
   const ssoError = params.get('error')
+  /** An invitation is a way in on its own, whatever public sign-up is set to. */
+  const invite = params.get('invite')
 
   const setup = config?.needsSetup ?? false
-  const canSignUp = setup || (config?.allowSignup ?? false)
+  const canSignUp = setup || Boolean(invite) || (config?.allowSignup ?? false)
   const [creating, setCreating] = useState(false)
-  const isCreating = setup || creating
+  const isCreating = setup || Boolean(invite) || creating
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
     setError(null)
     setBusy(true)
     try {
-      if (isCreating) await imogen.auth.signup({ email, password, name })
-      else await imogen.auth.login({ email, password })
+      if (isCreating) {
+        await imogen.auth.signup({ email, password, name, ...(invite ? { invite } : {}) })
+      } else await imogen.auth.login({ email, password })
 
       onSignedIn()
       /*
