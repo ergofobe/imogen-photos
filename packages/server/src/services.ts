@@ -1,3 +1,4 @@
+import { AdminService } from './admin/admin.ts'
 import { AccountService } from './auth/accounts.ts'
 import { OAuthService } from './auth/oauth.ts'
 import { OidcService } from './auth/oidc.ts'
@@ -25,6 +26,7 @@ export type Services = {
   oauth: OAuthService
   oidc: OidcService | null
   assets: AssetService
+  admin: AdminService
   albums: AlbumService
   vault: VaultService
   faces: FaceService
@@ -55,6 +57,7 @@ export function createServices(config: Config, database?: Database): Services {
     : null
 
   const assets = new AssetService(db)
+  const admin = new AdminService(db)
   const albums = new AlbumService(db)
   const vault = new VaultService(db, { secret: config.secret })
   const models = new ModelStore(config.modelsDir)
@@ -83,6 +86,7 @@ export function createServices(config: Config, database?: Database): Services {
     oauth,
     oidc,
     assets,
+    admin,
     albums,
     vault,
     faces,

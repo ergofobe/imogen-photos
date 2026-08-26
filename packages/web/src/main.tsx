@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Shell } from './components/Shell.tsx'
 import { UploadDrawer } from './components/UploadDrawer.tsx'
 import { imogen } from './lib/client.ts'
+import { Admin } from './routes/Admin.tsx'
 import { AlbumDetail } from './routes/AlbumDetail.tsx'
 import { Albums } from './routes/Albums.tsx'
 import { Login } from './routes/Login.tsx'
@@ -64,6 +65,21 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login onSignedIn={() => void refetch()} />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    )
+  }
+
+  /**
+   * Administration lives outside the photo shell, and outside the router entirely for
+   * anyone who is not an administrator: an ordinary account asking for /admin falls
+   * through to the same redirect as any other unknown path, so the area gives no sign
+   * of itself. The API refuses non-administrators on its own; this only keeps the
+   * client from announcing what the server is hiding.
+   */
+  if (user.role === 'admin' && location.pathname.startsWith('/admin')) {
+    return (
+      <Routes>
+        <Route path="/admin" element={<Admin user={user} />} />
       </Routes>
     )
   }

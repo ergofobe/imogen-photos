@@ -1,6 +1,7 @@
 import type { User } from '@imogen/shared'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { ProfileForm } from '../components/ProfileForm.tsx'
 import { signOut } from '../components/Shell.tsx'
 import { imogen } from '../lib/client.ts'
@@ -39,10 +40,11 @@ export function Settings({ user }: { user: User }) {
           user={user}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ['me'] })}
         />
-        <div className="pt-3">
-          <Row label="Role" value={user.role === 'admin' ? 'Administrator' : 'User'} />
-          {user.oidcSubject && <Row label="Sign-in" value="Single sign-on" />}
-        </div>
+        {user.oidcSubject && (
+          <div className="pt-3">
+            <Row label="Sign-in" value="Single sign-on" />
+          </div>
+        )}
       </Section>
 
       {stats && (
@@ -113,6 +115,23 @@ export function Settings({ user }: { user: User }) {
           </button>
         </div>
       </Section>
+
+      {user.role === 'admin' && (
+        <Section title="Administration">
+          <p className="pt-1 text-sm leading-relaxed text-muted">
+            You look after this server. Accounts, the processing queue, connected apps and
+            everything shared publicly are managed separately from your own library.
+          </p>
+          <div className="flex flex-wrap gap-2 pt-3">
+            <Link
+              to="/admin"
+              className="rounded-lg border border-line px-3 py-1.5 text-sm transition hover:bg-sunken"
+            >
+              Open administration
+            </Link>
+          </div>
+        </Section>
+      )}
 
       <div className="mt-8 border-t border-line pt-6">
         <button

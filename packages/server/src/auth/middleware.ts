@@ -2,7 +2,7 @@ import { ALL_SCOPES, type OAuthScope } from '@imogen/shared'
 import type { MiddlewareHandler } from 'hono'
 import { getCookie } from 'hono/cookie'
 import type { Principal } from '../lib/context.ts'
-import { insufficientScope, unauthorized } from '../lib/errors.ts'
+import { insufficientScope, notFound, unauthorized } from '../lib/errors.ts'
 import type { Services } from '../services.ts'
 import { SESSION_COOKIE } from './sessions.ts'
 
@@ -96,6 +96,38 @@ export function requireAdmin(): MiddlewareHandler<AppEnv> {
     if (principal.user.role !== 'admin') {
       throw insufficientScope('administrator')
     }
+    await next()
+  }
+}
+
+/**
+ * Guards the administration API by pretending it is not there.
+ *
+ * Every other guard tells the caller what went wrong, because a legitimate client
+ * needs to know whether to sign in or to ask for another scope. This one does the
+ * opposite: an anonymous request, an expired session and a perfectly valid ordinary
+ * account all get the same 404 the server gives for a path it has never heard of.
+ *
+ * Scanners look for the panel, not for a way past it, and a 401 or 403 answers the
+ * only question they are asking. So the principal is resolved here rather than by
+ * `requireAuth`, whose job is to explain itself — including a `WWW-Authenticate`
+ * header naming the authorization server, which would give the game away on its own.
+ */
+export function requireHiddenAdmin(): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const services = c.get('services')
+    const principal = await resolvePrincipal(
+      services,
+      c.req.raw.headers,
+      getCookie(c, SESSION_COOKIE),
+    )
+    // Word for word what the server says for a path it has never heard of. A message
+    // of its own — "Not found" against "No route for /api/v1/admin/users" — would be
+    // the whole disguise undone, since only a mounted router can answer differently.
+    if (principal?.user.role !== 'admin') throw notFound(`No route for ${c.req.path}`)
+
+    if (principal.sessionId) void services.sessions.touch(principal.sessionId)
+    c.set('principal', principal)
     await next()
   }
 }

@@ -6,6 +6,7 @@ import { Scalar } from '@scalar/hono-api-reference'
 import type { Hono } from 'hono'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
+import { createAdminRoutes } from './api/admin.ts'
 import { createAlbumRoutes } from './api/albums.ts'
 import { createAssetRoutes } from './api/assets.ts'
 import { createAuthRoutes } from './api/auth.ts'
@@ -99,6 +100,7 @@ export function createApp({ services, webRoot }: AppOptions) {
   v1.route('/vault', createVaultRoutes())
   v1.route('/people', createFaceRoutes())
   v1.route('/albums', createAlbumRoutes())
+  v1.route('/admin', createAdminRoutes())
 
   app.route('/api/v1', v1)
 
