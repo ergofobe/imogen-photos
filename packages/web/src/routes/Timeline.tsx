@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AlbumPicker } from '../components/AlbumPicker.tsx'
+import { ConfirmDialog } from '../components/ConfirmDialog.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { SelectionBar } from '../components/SelectionBar.tsx'
@@ -49,6 +50,7 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
   const ids = useMemo(() => assets.map((a) => a.id), [assets])
   const { selected, toggle, clear, selectAll } = useSelection(ids)
   const [pickingAlbum, setPickingAlbum] = useState(false)
+  const [confirmingTrash, setConfirmingTrash] = useState<string[] | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   // The confirmation says what happened and then gets out of the way.
@@ -168,11 +170,35 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
                   },
                   {
                     label: 'Move to trash',
-                    onClick: () => trash.mutate([...selected]),
+                    onClick: () => setConfirmingTrash([...selected]),
                     icon: 'M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12',
                   },
                 ]
           }
+        />
+      )}
+
+      {confirmingTrash && (
+        <ConfirmDialog
+          title={
+            confirmingTrash.length === 1
+              ? 'Move this photo to the trash?'
+              : `Move ${confirmingTrash.length} photos to the trash?`
+          }
+          body={
+            confirmingTrash.length === 1
+              ? 'It leaves the timeline and every album. You can put it back from the trash until it is swept.'
+              : 'They leave the timeline and every album. You can put them back from the trash until it is swept.'
+          }
+          confirmLabel="Move to trash"
+          destructive
+          onConfirm={() => {
+            const ids = confirmingTrash
+            setConfirmingTrash(null)
+            closePhoto()
+            trash.mutate(ids)
+          }}
+          onCancel={() => setConfirmingTrash(null)}
         />
       )}
 

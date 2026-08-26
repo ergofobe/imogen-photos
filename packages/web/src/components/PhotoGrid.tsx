@@ -11,6 +11,8 @@ type Props = {
   onToggleSelect: (asset: Asset, shiftKey: boolean) => void
   onReachEnd?: () => void
   loadingMore?: boolean
+  /** A shared page has nothing to do with a selection, so it does not offer one. */
+  selectable?: boolean
 }
 
 const GAP = 4
@@ -31,6 +33,7 @@ export function PhotoGrid({
   onToggleSelect,
   onReachEnd,
   loadingMore,
+  selectable = true,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -103,6 +106,7 @@ export function PhotoGrid({
                       height={item.height}
                       selected={selected.has(item.id)}
                       selecting={selecting}
+                      selectable={selectable}
                       onOpen={onOpen}
                       onToggleSelect={onToggleSelect}
                     />

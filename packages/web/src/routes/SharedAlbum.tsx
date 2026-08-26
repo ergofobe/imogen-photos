@@ -141,6 +141,8 @@ export function SharedAlbum() {
               selected={new Set()}
               onOpen={(asset) => openPhoto(asset.id)}
               onToggleSelect={() => {}}
+              // A visitor has nothing to do with a selection: there is no bar to act on it.
+              selectable={false}
             />
           )}
         </main>

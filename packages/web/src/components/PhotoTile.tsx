@@ -7,6 +7,7 @@ type Props = {
   width: number
   height: number
   selected: boolean
+  selectable?: boolean
   selecting: boolean
   onOpen: (asset: Asset) => void
   onToggleSelect: (asset: Asset, shiftKey: boolean) => void
@@ -28,6 +29,7 @@ export function PhotoTile({
   height,
   selected,
   selecting,
+  selectable = true,
   onOpen,
   onToggleSelect,
 }: Props) {
@@ -63,8 +65,10 @@ export function PhotoTile({
       <button
         type="button"
         onClick={(event) => {
-          if (selecting || event.metaKey || event.ctrlKey) onToggleSelect(asset, event.shiftKey)
-          else onOpen(asset)
+          if (selectable && (selecting || event.metaKey || event.ctrlKey)) {
+            onToggleSelect(asset, event.shiftKey)
+            return
+          } else onOpen(asset)
         }}
         aria-label={`Open ${asset.originalFilename}`}
         className="absolute inset-0 cursor-pointer"
@@ -102,31 +106,33 @@ export function PhotoTile({
       )}
 
       {/* The selection affordance appears on hover, and stays once anything is selected. */}
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onToggleSelect(asset, event.shiftKey)
-        }}
-        aria-label={selected ? 'Deselect' : 'Select'}
-        aria-pressed={selected}
-        className={`absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border transition-all ${
-          selected
-            ? 'border-safelight bg-safelight text-white'
-            : 'border-white/70 bg-black/25 text-transparent opacity-0 backdrop-blur-sm group-hover:opacity-100 focus-visible:opacity-100'
-        } ${selecting ? 'opacity-100' : ''}`}
-      >
-        <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5">
-          <path
-            d="M4 10.5l4 4 8-9"
-            fill="none"
-            stroke={selected ? 'currentColor' : 'white'}
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
+      {selectable && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleSelect(asset, event.shiftKey)
+          }}
+          aria-label={selected ? 'Deselect' : 'Select'}
+          aria-pressed={selected}
+          className={`absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border transition-all ${
+            selected
+              ? 'border-safelight bg-safelight text-white'
+              : 'border-white/70 bg-black/25 text-transparent opacity-0 backdrop-blur-sm group-hover:opacity-100 focus-visible:opacity-100'
+          } ${selecting ? 'opacity-100' : ''}`}
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true" className="h-3.5 w-3.5">
+            <path
+              d="M4 10.5l4 4 8-9"
+              fill="none"
+              stroke={selected ? 'currentColor' : 'white'}
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
 
       {selected && (
         <span className="pointer-events-none absolute inset-0 rounded-[--radius-tile] ring-2 ring-safelight ring-inset" />

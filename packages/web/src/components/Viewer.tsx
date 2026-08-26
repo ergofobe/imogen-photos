@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAssetUrls } from '../lib/assetUrls.tsx'
 import { formatAperture, formatBytes, formatShutter } from '../lib/format.ts'
 import { CaptureDate } from './CaptureDate.tsx'
+import { ConfirmDialog } from './ConfirmDialog.tsx'
 import { FaceHighlight } from './FaceHighlight.tsx'
 import { PeopleInPhoto } from './PeopleInPhoto.tsx'
 import { PhotoDescription } from './PhotoDescription.tsx'
@@ -39,6 +40,7 @@ export function Viewer({
   const imageRef = useRef<HTMLImageElement>(null)
   const [highlighted, setHighlighted] = useState<DetectedFace | null>(null)
   const [showInfo, setShowInfo] = useState(false)
+  const [confirmingTrash, setConfirmingTrash] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -169,6 +171,20 @@ export function Viewer({
 
       <FaceHighlight face={highlighted} asset={asset} imageRef={imageRef} />
 
+      {confirmingTrash && (
+        <ConfirmDialog
+          title="Move this photo to the trash?"
+          body="It leaves the timeline and every album. You can put it back from the trash until it is swept."
+          confirmLabel="Move to trash"
+          destructive
+          onConfirm={() => {
+            setConfirmingTrash(false)
+            onTrash(asset)
+          }}
+          onCancel={() => setConfirmingTrash(false)}
+        />
+      )}
+
       <header
         className="absolute inset-x-0 top-0 flex items-center gap-1 bg-gradient-to-b from-black/70 to-transparent p-3 pt-[max(0.75rem,env(safe-area-inset-top))] transition-opacity duration-300"
         style={{ opacity: chromeVisible ? 1 : 0 }}
@@ -215,7 +231,7 @@ export function Viewer({
           </svg>
         </a>
         {editable && (
-          <IconButton onClick={() => onTrash(asset)} label="Move to trash">
+          <IconButton onClick={() => setConfirmingTrash(true)} label="Move to trash">
             <path d="M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12" />
           </IconButton>
         )}
