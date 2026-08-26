@@ -106,6 +106,7 @@ export function SharedAlbum() {
           onNext={() => showPhoto(assets[openIndex + 1]?.id ?? '')}
           onToggleFavorite={() => {}}
           onTrash={() => {}}
+          editable={false}
         />
       )}
     </div>

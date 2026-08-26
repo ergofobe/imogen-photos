@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatAperture, formatBytes, formatExact, formatShutter } from '../lib/format.ts'
 import { FaceHighlight } from './FaceHighlight.tsx'
 import { PeopleInPhoto } from './PeopleInPhoto.tsx'
+import { PhotoDescription } from './PhotoDescription.tsx'
 
 type Props = {
   asset: Asset
@@ -13,6 +14,8 @@ type Props = {
   onNext: () => void
   onToggleFavorite: (asset: Asset) => void
   onTrash: (asset: Asset) => void
+  /** A shared album is read-only: its visitors see the description but cannot edit it. */
+  editable?: boolean
 }
 
 const IDLE_MS = 2600
@@ -26,6 +29,7 @@ export function Viewer({
   onNext,
   onToggleFavorite,
   onTrash,
+  editable = true,
 }: Props) {
   const isVideo = asset.type === 'video'
   const imageRef = useRef<HTMLImageElement>(null)
@@ -154,6 +158,7 @@ export function Viewer({
               setShowInfo(false)
             }}
             onHighlight={setHighlighted}
+            editable={editable}
           />
         )}
       </div>
@@ -288,10 +293,12 @@ function InfoPanel({
   asset,
   onClose,
   onHighlight,
+  editable,
 }: {
   asset: Asset
   onClose: () => void
   onHighlight: (face: DetectedFace | null) => void
+  editable: boolean
 }) {
   const exif = asset.exif
   const rows: Array<[string, string]> = [
@@ -355,11 +362,7 @@ function InfoPanel({
 
       <PeopleInPhoto assetId={asset.id} onNavigate={onClose} onHighlight={onHighlight} />
 
-      {asset.description && (
-        <p className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed text-white/80">
-          {asset.description}
-        </p>
-      )}
+      <PhotoDescription asset={asset} editable={editable} />
     </aside>
   )
 }
