@@ -15,7 +15,9 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await harness.db.execute(sql`truncate users, assets, albums, jobs, sessions, invites cascade`)
+  await harness.db.execute(
+    sql`truncate users, assets, albums, jobs, sessions, invites, oauth_clients, oauth_tokens cascade`,
+  )
 })
 
 const request = (path: string, init: RequestInit = {}) =>
@@ -521,5 +523,103 @@ describe('the work queue', () => {
     const response = await request('/api/v1/admin/queue', { headers: { Cookie: cookie } })
 
     expect(response.status).toBe(404)
+  })
+})
+
+describe('apps and sessions', () => {
+  test('lists sessions and marks the one making the request', async () => {
+    const admin = await signUp('first@example.com')
+    await signUp('second@example.com')
+
+    const response = await request('/api/v1/admin/sessions', { headers: { Cookie: admin.cookie } })
+    const body = (await response.json()) as {
+      items: Array<{ current: boolean; userEmail: string }>
+    }
+
+    expect(body.items).toHaveLength(2)
+    const mine = body.items.filter((s) => s.current)
+    expect(mine).toHaveLength(1)
+    expect(mine[0]?.userEmail).toBe('first@example.com')
+  })
+
+  test('revoking a session ends it at once', async () => {
+    const admin = await signUp('first@example.com')
+    const other = await signUp('second@example.com')
+    expect((await request('/api/v1/assets', { headers: { Cookie: other.cookie } })).status).toBe(
+      200,
+    )
+
+    const listed = await request('/api/v1/admin/sessions', { headers: { Cookie: admin.cookie } })
+    const { items } = (await listed.json()) as { items: Array<{ id: string; current: boolean }> }
+    const theirs = items.find((s) => !s.current)
+
+    await asAdmin(`/api/v1/admin/sessions/${theirs?.id}`, 'DELETE', undefined, admin.cookie)
+
+    const after = await request('/api/v1/assets', { headers: { Cookie: other.cookie } })
+    expect(after.status).toBe(401)
+  })
+
+  test('an administrator cannot revoke the session they are using', async () => {
+    const admin = await signUp('first@example.com')
+    const listed = await request('/api/v1/admin/sessions', { headers: { Cookie: admin.cookie } })
+    const { items } = (await listed.json()) as { items: Array<{ id: string; current: boolean }> }
+    const mine = items.find((s) => s.current)
+
+    const response = await asAdmin(
+      `/api/v1/admin/sessions/${mine?.id}`,
+      'DELETE',
+      undefined,
+      admin.cookie,
+    )
+
+    expect(response.status).toBe(409)
+  })
+
+  test('lists registered applications and says which registered themselves', async () => {
+    const admin = await signUp('first@example.com')
+    await harness.db.execute(
+      sql`insert into oauth_clients (id, name, redirect_uris, grant_types, scopes, dynamically_registered)
+          values ('some-app', 'Some App', '["myapp://cb"]'::jsonb, '["authorization_code"]'::jsonb, '["library:read"]'::jsonb, true)`,
+    )
+
+    const response = await request('/api/v1/admin/clients', { headers: { Cookie: admin.cookie } })
+    const body = (await response.json()) as {
+      items: Array<{ id: string; dynamicallyRegistered: boolean; isPublic: boolean }>
+    }
+
+    const app = body.items.find((c) => c.id === 'some-app')
+    expect(app?.dynamicallyRegistered).toBe(true)
+    expect(app?.isPublic).toBe(true)
+  })
+
+  test('revoking an application takes its tokens with it', async () => {
+    const admin = await signUp('first@example.com')
+    await harness.db.execute(
+      sql`insert into oauth_clients (id, name, redirect_uris, grant_types, scopes)
+          values ('doomed', 'Doomed', '["myapp://cb"]'::jsonb, '["authorization_code"]'::jsonb, '["library:read"]'::jsonb)`,
+    )
+    await harness.db.execute(
+      sql`insert into oauth_tokens (token_hash, kind, client_id, user_id, scopes, family_id, expires_at)
+          values ('deadbeef', 'access', 'doomed', ${admin.user.id}, '["library:read"]'::jsonb, gen_random_uuid(), now() + interval '1 hour')`,
+    )
+
+    await asAdmin('/api/v1/admin/clients/doomed', 'DELETE', undefined, admin.cookie)
+
+    const left = await harness.db.execute(
+      sql`select count(*)::int as n from oauth_tokens where client_id = 'doomed'`,
+    )
+    expect((left[0] as { n: number }).n).toBe(0)
+  })
+
+  test('none of it is readable by an ordinary account', async () => {
+    await signUp('first@example.com')
+    const { cookie } = await signUp('second@example.com')
+
+    expect((await request('/api/v1/admin/clients', { headers: { Cookie: cookie } })).status).toBe(
+      404,
+    )
+    expect((await request('/api/v1/admin/sessions', { headers: { Cookie: cookie } })).status).toBe(
+      404,
+    )
   })
 })

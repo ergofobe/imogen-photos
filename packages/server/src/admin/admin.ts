@@ -1,4 +1,6 @@
 import type {
+  AdminClient,
+  AdminSession,
   AdminUser,
   AdminUserUpdate,
   Invite,
@@ -6,9 +8,9 @@ import type {
   InviteCreated,
   QueueHealth,
 } from '@imogen/shared'
-import { and, count, desc, eq, inArray, isNull, min, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gt, inArray, isNull, min, ne, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
-import { assets, invites, jobs, sessions, users } from '../db/schema.ts'
+import { assets, invites, jobs, oauthClients, oauthTokens, sessions, users } from '../db/schema.ts'
 import { conflict, notFound } from '../lib/errors.ts'
 import { generateToken, hashToken } from '../lib/tokens.ts'
 
@@ -255,6 +257,103 @@ export class AdminService {
   async discardJob(id: string): Promise<void> {
     const rows = await this.db.delete(jobs).where(eq(jobs.id, id)).returning({ id: jobs.id })
     if (rows.length === 0) throw notFound('No such job')
+  }
+
+  /**
+   * Applications allowed to act on somebody's behalf.
+   *
+   * Dynamic registration is open, so most of these arrived on their own rather than
+   * being set up by anyone. The live token count is what says whether a client is
+   * actually in use or is just a row left behind by something that tried once.
+   */
+  async clients(): Promise<AdminClient[]> {
+    const rows = await this.db
+      .select({
+        id: oauthClients.id,
+        name: oauthClients.name,
+        redirectUris: oauthClients.redirectUris,
+        scopes: oauthClients.scopes,
+        dynamicallyRegistered: oauthClients.dynamicallyRegistered,
+        secretHash: oauthClients.secretHash,
+        createdAt: oauthClients.createdAt,
+      })
+      .from(oauthClients)
+      .orderBy(desc(oauthClients.createdAt))
+
+    const live = await this.db
+      .select({ clientId: oauthTokens.clientId, n: count() })
+      .from(oauthTokens)
+      .where(and(isNull(oauthTokens.revokedAt), gt(oauthTokens.expiresAt, new Date())))
+      .groupBy(oauthTokens.clientId)
+    const byClient = new Map(live.map((row) => [row.clientId, Number(row.n)]))
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      redirectUris: row.redirectUris,
+      scopes: row.scopes,
+      dynamicallyRegistered: row.dynamicallyRegistered,
+      isPublic: row.secretHash === null,
+      createdAt: row.createdAt.toISOString(),
+      activeTokens: byClient.get(row.id) ?? 0,
+    }))
+  }
+
+  /** Removes an application. Its tokens cascade, so access ends with the row. */
+  async revokeClient(clientId: string): Promise<void> {
+    const rows = await this.db
+      .delete(oauthClients)
+      .where(eq(oauthClients.id, clientId))
+      .returning({ id: oauthClients.id })
+    if (rows.length === 0) throw notFound('No such application')
+  }
+
+  /** Every signed-in browser, newest first, with the caller's own marked. */
+  async sessions(currentSessionId?: string): Promise<AdminSession[]> {
+    const rows = await this.db
+      .select({
+        id: sessions.id,
+        userId: sessions.userId,
+        userEmail: users.email,
+        userAgent: sessions.userAgent,
+        ipAddress: sessions.ipAddress,
+        createdAt: sessions.createdAt,
+        lastUsedAt: sessions.lastUsedAt,
+        expiresAt: sessions.expiresAt,
+      })
+      .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .where(gt(sessions.expiresAt, new Date()))
+      .orderBy(desc(sessions.lastUsedAt))
+
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      userEmail: row.userEmail,
+      userAgent: row.userAgent,
+      ipAddress: row.ipAddress,
+      createdAt: row.createdAt.toISOString(),
+      lastUsedAt: row.lastUsedAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+      current: row.id === currentSessionId,
+    }))
+  }
+
+  /**
+   * Ends one session.
+   *
+   * Refuses the caller's own. Signing yourself out from the administration page is
+   * never what was meant, and the sign-out button is right there for when it is.
+   */
+  async revokeSession(sessionId: string, currentSessionId?: string): Promise<void> {
+    if (sessionId === currentSessionId) {
+      throw conflict('That is the session you are using. Sign out instead.')
+    }
+    const rows = await this.db
+      .delete(sessions)
+      .where(eq(sessions.id, sessionId))
+      .returning({ id: sessions.id })
+    if (rows.length === 0) throw notFound('No such session')
   }
 
   private async requireUser(userId: string) {

@@ -2,6 +2,7 @@ import type { User } from '@imogen/shared'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { AdminAccounts } from '../components/admin/AdminAccounts.tsx'
+import { AdminClients } from '../components/admin/AdminClients.tsx'
 import { AdminProcessing } from '../components/admin/AdminProcessing.tsx'
 
 type SectionId = 'accounts' | 'processing' | 'clients' | 'storage' | 'settings' | 'shares'
@@ -76,7 +77,8 @@ export function Admin({ user }: { user: User }) {
         <main className="min-w-0 flex-1">
           {active === 'accounts' && <AdminAccounts />}
           {active === 'processing' && <AdminProcessing />}
-          {!['accounts', 'processing'].includes(active) && <NotBuiltYet />}
+          {active === 'clients' && <AdminClients />}
+          {!['accounts', 'processing', 'clients'].includes(active) && <NotBuiltYet />}
         </main>
       </div>
     </div>

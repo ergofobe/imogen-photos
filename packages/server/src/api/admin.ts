@@ -1,6 +1,8 @@
 import { createRoute, OpenAPIHono, z } from '@hono/zod-openapi'
 import {
+  AdminClient,
   AdminPasswordReset,
+  AdminSession,
   AdminUser,
   AdminUserList,
   AdminUserUpdate,
@@ -210,6 +212,73 @@ export function createAdminRoutes() {
     }),
     async (c) => {
       await c.get('services').admin.discardJob(c.req.valid('param').id)
+      return c.body(null, 204)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/clients',
+      tags: ['Admin'],
+      summary: 'Applications allowed to act on someone’s behalf',
+      security: security(),
+      responses: {
+        ...ok(z.object({ items: z.array(AdminClient) }), 'The applications'),
+        ...ERROR_RESPONSES,
+      },
+    }),
+    async (c) => c.json({ items: await c.get('services').admin.clients() }, 200),
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/clients/{clientId}',
+      tags: ['Admin'],
+      summary: 'Revoke an application and every token it holds',
+      security: security(),
+      request: { params: z.object({ clientId: z.string() }) },
+      responses: { ...NO_CONTENT, ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      await c.get('services').admin.revokeClient(c.req.valid('param').clientId)
+      return c.body(null, 204)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/sessions',
+      tags: ['Admin'],
+      summary: 'Signed-in browsers',
+      security: security(),
+      responses: {
+        ...ok(z.object({ items: z.array(AdminSession) }), 'The sessions'),
+        ...ERROR_RESPONSES,
+      },
+    }),
+    async (c) => {
+      const items = await c.get('services').admin.sessions(c.get('principal').sessionId)
+      return c.json({ items }, 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/sessions/{id}',
+      tags: ['Admin'],
+      summary: 'End a session',
+      security: security(),
+      request: { params: IdParam },
+      responses: { ...NO_CONTENT, ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      await c
+        .get('services')
+        .admin.revokeSession(c.req.valid('param').id, c.get('principal').sessionId)
       return c.body(null, 204)
     },
   )
