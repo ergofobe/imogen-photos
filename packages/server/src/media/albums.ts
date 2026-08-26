@@ -3,6 +3,7 @@ import type {
   AlbumAssetsResult,
   AlbumCreate,
   AlbumUpdate,
+  Asset,
   ShareLink,
   ShareLinkCreate,
 } from '@imogen/shared'
@@ -213,20 +214,14 @@ export class AlbumService {
       .where(and(eq(shareLinks.albumId, albumId), isNull(shareLinks.revokedAt)))
   }
 
-  /** Resolves a public share slug. Returns null for unknown, revoked, or expired links. */
-  async resolveShare(slug: string, password?: string) {
-    const [link] = await this.db
-      .select()
-      .from(shareLinks)
-      .where(and(eq(shareLinks.slug, slug), isNull(shareLinks.revokedAt)))
-      .limit(1)
+  /**
+   * Resolves a public share slug, reporting whether it is password-protected without
+   * requiring the password. The caller decides whether the visitor has proved they know
+   * it; this keeps the credential out of the query string.
+   */
+  async openShare(slug: string): Promise<OpenedShare | null> {
+    const link = await this.findLiveLink(slug)
     if (!link) return null
-    if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) return null
-    if (link.passwordHash) {
-      // Bun.password.verify is constant-time, so a wrong guess leaks nothing by timing.
-      const matches = password ? await Bun.password.verify(password, link.passwordHash) : false
-      if (!matches) return { link, locked: true as const, album: null }
-    }
 
     const [album] = await this.db.select().from(albums).where(eq(albums.id, link.albumId)).limit(1)
     if (!album) return null
@@ -240,11 +235,36 @@ export class AlbumService {
 
     return {
       link,
-      locked: false as const,
+      requiresPassword: link.passwordHash !== null,
       album: {
         ...toAlbum(album, rows.length, link.slug),
         assets: rows.map((r) => toAsset(r.asset)),
       },
     }
   }
+
+  async checkSharePassword(slug: string, password: string): Promise<boolean> {
+    const link = await this.findLiveLink(slug)
+    if (!link) return false
+    if (!link.passwordHash) return true
+    // Bun.password.verify is constant-time, so a wrong guess leaks nothing by timing.
+    return Bun.password.verify(password, link.passwordHash)
+  }
+
+  private async findLiveLink(slug: string) {
+    const [link] = await this.db
+      .select()
+      .from(shareLinks)
+      .where(and(eq(shareLinks.slug, slug), isNull(shareLinks.revokedAt)))
+      .limit(1)
+    if (!link) return null
+    if (link.expiresAt && link.expiresAt.getTime() <= Date.now()) return null
+    return link
+  }
+}
+
+export type OpenedShare = {
+  link: typeof shareLinks.$inferSelect
+  requiresPassword: boolean
+  album: Album & { assets: Asset[] }
 }

@@ -316,10 +316,70 @@ describe('albums and sharing', () => {
     ).json()) as { slug: string }
 
     const locked = await request(`/api/v1/share/${link.slug}`)
-    const unlocked = await request(`/api/v1/share/${link.slug}?password=open-sesame`)
-
     expect(locked.status).toBe(401)
+
+    // The password is posted, never put in a URL, and the proof comes back as a cookie.
+    const unlock = await jsonRequest(`/api/v1/share/${link.slug}/unlock`, 'POST', {
+      password: 'open-sesame',
+    })
+    expect(unlock.status).toBe(200)
+
+    const unlockCookie = unlock.headers.get('set-cookie')?.split(';')[0] ?? ''
+    const unlocked = await request(`/api/v1/share/${link.slug}`, {
+      headers: { Cookie: unlockCookie },
+    })
     expect(unlocked.status).toBe(200)
+  })
+
+  test('rejects a wrong password and issues no unlock cookie', async () => {
+    const { cookie, albumId } = await setup()
+    const link = (await (
+      await jsonRequest(
+        `/api/v1/albums/${albumId}/share`,
+        'POST',
+        { allowDownload: true, password: 'open-sesame' },
+        cookie,
+      )
+    ).json()) as { slug: string }
+
+    const response = await jsonRequest(`/api/v1/share/${link.slug}/unlock`, 'POST', {
+      password: 'wrong',
+    })
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('set-cookie')).toBeNull()
+  })
+
+  test('a forged unlock cookie does not open a locked album', async () => {
+    const { cookie, albumId } = await setup()
+    const link = (await (
+      await jsonRequest(
+        `/api/v1/albums/${albumId}/share`,
+        'POST',
+        { allowDownload: true, password: 'open-sesame' },
+        cookie,
+      )
+    ).json()) as { slug: string }
+
+    const forged = `imogen_share_${link.slug}=${Date.now() + 60000}.not-a-real-signature`
+    const response = await request(`/api/v1/share/${link.slug}`, { headers: { Cookie: forged } })
+
+    expect(response.status).toBe(401)
+  })
+
+  test('a share link never carries the password in its URL', async () => {
+    const { cookie, albumId } = await setup()
+    const link = (await (
+      await jsonRequest(
+        `/api/v1/albums/${albumId}/share`,
+        'POST',
+        { allowDownload: true, password: 'open-sesame' },
+        cookie,
+      )
+    ).json()) as { url: string }
+
+    expect(link.url).not.toContain('open-sesame')
+    expect(link.url).not.toContain('password')
   })
 
   test('a share slug does not grant access to photos outside its album', async () => {

@@ -11,6 +11,7 @@ import { createAssetRoutes } from './api/assets.ts'
 import { createAuthRoutes } from './api/auth.ts'
 import { createOAuthRoutes, createWellKnownRoutes } from './api/oauth.ts'
 import { createShareRoutes } from './api/share.ts'
+import { createUploadRoutes } from './api/uploads.ts'
 import type { AppEnv } from './auth/middleware.ts'
 import { respondWithError } from './lib/errors.ts'
 import { createMcpRoutes } from './mcp/routes.ts'
@@ -90,6 +91,7 @@ export function createApp({ services, webRoot }: AppOptions) {
   // Each router applies its own authentication. A wildcard across /api/v1 would also
   // cover the OpenAPI document and health check, which must stay reachable.
   v1.route('/assets', createAssetRoutes())
+  v1.route('/uploads', createUploadRoutes())
   v1.route('/albums', createAlbumRoutes())
 
   app.route('/api/v1', v1)
