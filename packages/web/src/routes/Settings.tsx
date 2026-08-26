@@ -47,16 +47,6 @@ export function Settings({ user }: { user: User }) {
         )}
       </Section>
 
-      {stats && (
-        <Section title="Library">
-          <Row label="Photos" value={String(stats.imageCount)} />
-          <Row label="Videos" value={String(stats.videoCount)} />
-          <Row label="Albums" value={String(stats.albumCount)} />
-          <Row label="In trash" value={String(stats.trashedCount)} />
-          <Row label="Storage" value={formatBytes(stats.storageBytes)} />
-        </Section>
-      )}
-
       {user.hasPassword && (
         <Section title="Password">
           <form onSubmit={changePassword} className="space-y-3 pt-1">
@@ -89,6 +79,16 @@ export function Settings({ user }: { user: User }) {
               Change password
             </button>
           </form>
+        </Section>
+      )}
+
+      {stats && (
+        <Section title="Library">
+          <Row label="Photos" value={String(stats.imageCount)} />
+          <Row label="Videos" value={String(stats.videoCount)} />
+          <Row label="Albums" value={String(stats.albumCount)} />
+          <Row label="In trash" value={String(stats.trashedCount)} />
+          <Row label="Storage" value={formatBytes(stats.storageBytes)} />
         </Section>
       )}
 
