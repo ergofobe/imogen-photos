@@ -1,7 +1,8 @@
 import type { Asset, AssetQuery } from '@imogen/shared'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { AlbumPicker } from '../components/AlbumPicker.tsx'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { SelectionBar } from '../components/SelectionBar.tsx'
@@ -47,6 +48,15 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
   const assets = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])
   const ids = useMemo(() => assets.map((a) => a.id), [assets])
   const { selected, toggle, clear, selectAll } = useSelection(ids)
+  const [pickingAlbum, setPickingAlbum] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  // The confirmation says what happened and then gets out of the way.
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), 4000)
+    return () => clearTimeout(timer)
+  }, [notice])
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['assets'] })
 
@@ -147,6 +157,11 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
                 ]
               : [
                   {
+                    label: 'Add to album',
+                    onClick: () => setPickingAlbum(true),
+                    icon: 'M4 7h6l2 2h8v10H4zM12 12v5M9.5 14.5h5',
+                  },
+                  {
                     label: 'Move to vault',
                     onClick: () => toVault.mutate([...selected]),
                     icon: 'M4 11h16v9H4zM8 11V7a4 4 0 0 1 8 0v4',
@@ -159,6 +174,24 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
                 ]
           }
         />
+      )}
+
+      {pickingAlbum && (
+        <AlbumPicker
+          assetIds={[...selected]}
+          onClose={() => setPickingAlbum(false)}
+          onDone={(message) => {
+            setPickingAlbum(false)
+            clear()
+            setNotice(message)
+          }}
+        />
+      )}
+
+      {notice && (
+        <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center p-4 pb-[max(1rem,calc(env(safe-area-inset-bottom)+4.5rem))] md:pb-6">
+          <p className="surface-panel rounded-full px-4 py-2 text-sm">{notice}</p>
+        </div>
       )}
 
       {open && (
