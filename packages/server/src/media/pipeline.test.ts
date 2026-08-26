@@ -178,7 +178,7 @@ describe('image processing', () => {
     expect(result.thumbnail).not.toBeNull()
   })
 
-  test.skipIf(heicEncoder === null)(
+  test.skipIf(!tiledHeicAvailable)(
     'decodes a tiled HEIC at full resolution, not one tile',
     async () => {
       // iPhone HEICs are a grid of 512x512 tiles. Some ffmpeg builds return a single tile
