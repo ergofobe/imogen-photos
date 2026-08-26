@@ -33,15 +33,48 @@ async function makeJpeg(path: string, width = 1600, height = 1200) {
   return path
 }
 
+/** Whether a command exists on this machine, so a fixture can degrade instead of lying. */
+async function hasCommand(command: string): Promise<boolean> {
+  return (await Bun.spawn(['which', command], { stdout: 'ignore', stderr: 'ignore' }).exited) === 0
+}
+
+/**
+ * Encodes a HEIC. macOS has `sips`; Linux has `heif-enc` from libheif. Neither is
+ * universal, so a machine with neither skips the HEIC tests rather than failing them
+ * for the wrong reason.
+ */
+async function encodeHeic(source: string, out: string): Promise<boolean> {
+  if (heicEncoder === 'sips') {
+    await Bun.$`sips -s format heic ${source} --out ${out}`.quiet().nothrow()
+  } else if (heicEncoder === 'heif-enc') {
+    await Bun.$`heif-enc -q 80 -o ${out} ${source}`.quiet().nothrow()
+  } else {
+    return false
+  }
+  return Bun.file(out).exists()
+}
+
 let jpegPath: string
 let heicPath: string
 let videoPath: string
+
+/*
+ * Detected at module scope, not in beforeAll: `test.skipIf` is evaluated while the file
+ * is being read, so a flag set later is always still false and every test silently skips.
+ */
+const heicEncoder = (await hasCommand('sips'))
+  ? 'sips'
+  : (await hasCommand('heif-enc'))
+    ? 'heif-enc'
+    : null
+const exiftoolAvailable = await hasCommand('exiftool')
+let heicAvailable = false
 
 beforeAll(async () => {
   jpegPath = await makeJpeg(join(workDir, 'photo.jpg'))
 
   heicPath = join(workDir, 'photo.heic')
-  await Bun.$`sips -s format heic ${jpegPath} --out ${heicPath}`.quiet().nothrow()
+  heicAvailable = await encodeHeic(jpegPath, heicPath)
 
   videoPath = join(workDir, 'clip.mp4')
   await Bun.$`ffmpeg -y -loglevel error -f lavfi -i testsrc=duration=2:size=640x480:rate=24 -pix_fmt yuv420p ${videoPath}`
@@ -121,7 +154,7 @@ describe('image processing', () => {
     expect(result.placeholderColor).toMatch(/^#[0-9a-f]{6}$/)
   })
 
-  test('reads a HEIC photo from an iPhone', async () => {
+  test.skipIf(heicEncoder === null)('reads a HEIC photo from an iPhone', async () => {
     const result = await pipeline.process(heicPath, {
       mimeType: 'image/heic',
       filename: 'IMG_0001.HEIC',
@@ -132,25 +165,28 @@ describe('image processing', () => {
     expect(result.thumbnail).not.toBeNull()
   })
 
-  test('decodes a tiled HEIC at full resolution, not one tile', async () => {
-    // iPhone HEICs are a grid of 512x512 tiles. Some ffmpeg builds return a single tile
-    // instead of the assembled image, which imports a 3000x2000 photo as 512x512 and
-    // looks like a success. The decoded size must match what the file declares.
-    const large = join(workDir, 'tiled.jpg')
-    await makeJpeg(large, 3000, 2000)
-    const tiled = join(workDir, 'tiled.heic')
-    await Bun.$`sips -s format heic ${large} --out ${tiled}`.quiet().nothrow()
+  test.skipIf(heicEncoder === null)(
+    'decodes a tiled HEIC at full resolution, not one tile',
+    async () => {
+      // iPhone HEICs are a grid of 512x512 tiles. Some ffmpeg builds return a single tile
+      // instead of the assembled image, which imports a 3000x2000 photo as 512x512 and
+      // looks like a success. The decoded size must match what the file declares.
+      const large = join(workDir, 'tiled.jpg')
+      await makeJpeg(large, 3000, 2000)
+      const tiled = join(workDir, 'tiled.heic')
+      await encodeHeic(large, tiled)
 
-    const declared = await sharp(tiled).metadata()
-    const result = await pipeline.process(tiled, {
-      mimeType: 'image/heic',
-      filename: 'IMG_0002.HEIC',
-    })
+      const declared = await sharp(tiled).metadata()
+      const result = await pipeline.process(tiled, {
+        mimeType: 'image/heic',
+        filename: 'IMG_0002.HEIC',
+      })
 
-    expect(result.error).toBeNull()
-    expect(result.width).toBeGreaterThanOrEqual(Math.floor(declared.width! * 0.9))
-    expect(result.height).toBeGreaterThanOrEqual(Math.floor(declared.height! * 0.9))
-  })
+      expect(result.error).toBeNull()
+      expect(result.width).toBeGreaterThanOrEqual(Math.floor(declared.width! * 0.9))
+      expect(result.height).toBeGreaterThanOrEqual(Math.floor(declared.height! * 0.9))
+    },
+  )
 
   test('applies EXIF orientation so clients never have to rotate', async () => {
     const rotated = join(workDir, 'rotated.jpg')
@@ -168,7 +204,7 @@ describe('image processing', () => {
 })
 
 describe('metadata extraction', () => {
-  test('reads capture time and camera from EXIF', async () => {
+  test.skipIf(!exiftoolAvailable)('reads capture time and camera from EXIF', async () => {
     // exiftool writes in place; `-o` would consume the source we share with other tests.
     const withExif = join(workDir, 'exif.jpg')
     await Bun.write(withExif, Bun.file(jpegPath))
@@ -186,7 +222,7 @@ describe('metadata extraction', () => {
     expect(result.exif?.model).toBe('iPhone 11')
   })
 
-  test('reads GPS coordinates when present', async () => {
+  test.skipIf(!exiftoolAvailable)('reads GPS coordinates when present', async () => {
     const withGps = join(workDir, 'gps.jpg')
     await Bun.write(withGps, Bun.file(jpegPath))
     await Bun.$`exiftool -overwrite_original -GPSLatitude=38.7223 -GPSLatitudeRef=N -GPSLongitude=9.1393 -GPSLongitudeRef=W ${withGps}`
