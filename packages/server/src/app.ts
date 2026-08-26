@@ -58,23 +58,32 @@ export function createApp({ services, webRoot }: AppOptions) {
 
   if (process.env.NODE_ENV !== 'test') app.use('*', logger())
 
-  app.use(
-    '*',
-    secureHeaders({
-      // The web app is same-origin and self-contained; nothing loads from elsewhere.
-      contentSecurityPolicy: {
-        defaultSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'blob:'],
-        mediaSrc: ["'self'", 'blob:'],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        connectSrc: ["'self'"],
-        frameAncestors: ["'none'"],
-      },
-      referrerPolicy: 'same-origin',
-      crossOriginEmbedderPolicy: false,
-    }),
-  )
+  /**
+   * The API reference is the one page that needs a looser policy, and it says so here
+   * rather than trying to overrule the site-wide one later: both write the same
+   * header, and whichever runs last wins, which is not a thing to leave to ordering.
+   */
+  const DOCS_PATH = '/api/v1/docs'
+
+  const siteHeaders = secureHeaders({
+    // The web app is same-origin and self-contained; nothing loads from elsewhere.
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      mediaSrc: ["'self'", 'blob:'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+    referrerPolicy: 'same-origin',
+    crossOriginEmbedderPolicy: false,
+  })
+
+  app.use('*', async (c, next) => {
+    if (c.req.path === DOCS_PATH) return next()
+    return siteHeaders(c, next)
+  })
 
   app.onError((error, c) => respondWithError(c, error))
 
@@ -139,7 +148,33 @@ export function createApp({ services, webRoot }: AppOptions) {
     },
   })
 
-  app.get('/api/v1/docs', Scalar({ url: '/api/v1/openapi.json', pageTitle: 'imogen API' }))
+  /**
+   * The API reference.
+   *
+   * The viewer is served from this origin rather than a CDN, so the documentation
+   * works on a server with no way out to the internet — which is where a home library
+   * usually sits, and without it the page is simply blank.
+   *
+   * Scalar configures itself through an inline script, which the site-wide
+   * `script-src 'self'` refuses. The allowance is granted here and nowhere else: this
+   * one route renders our own OpenAPI document and nothing a user has supplied.
+   */
+  app.get(
+    DOCS_PATH,
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+      referrerPolicy: 'same-origin',
+      crossOriginEmbedderPolicy: false,
+    }),
+    Scalar({ url: '/api/v1/openapi.json', pageTitle: 'imogen API', cdn: '/scalar.js' }),
+  )
 
   // --- The web application ---
   if (webRoot) mountWebApp(app, webRoot)

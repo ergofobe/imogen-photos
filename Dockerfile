@@ -16,6 +16,11 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run --filter '@imogen/web' build
 
+# The reference viewer is copied into the web bundle during that build, so the
+# devDependency it came from has done its job. Reinstalling without development
+# dependencies keeps several hundred packages out of the runtime image.
+RUN rm -rf node_modules && bun install --frozen-lockfile --production
+
 # ---- Runtime --------------------------------------------------------------
 FROM oven/bun:1.3-debian AS runtime
 WORKDIR /app

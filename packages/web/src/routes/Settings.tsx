@@ -1,6 +1,6 @@
 import type { User } from '@imogen/shared'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { ProfileForm } from '../components/ProfileForm.tsx'
 import { signOut } from '../components/Shell.tsx'
@@ -104,15 +104,7 @@ export function Settings({ user }: { user: User }) {
           >
             API reference
           </a>
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard.writeText(`${window.location.origin}/mcp`)
-            }}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm transition hover:bg-sunken"
-          >
-            Copy MCP URL
-          </button>
+          <CopyButton label="Copy MCP URL" value={`${window.location.origin}/mcp`} />
         </div>
       </Section>
 
@@ -161,5 +153,38 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-sm text-muted">{label}</span>
       <span className="font-mono text-[13px] tabular-nums">{value}</span>
     </div>
+  )
+}
+
+/**
+ * Copies something, and says so.
+ *
+ * Copying is invisible: the clipboard gives no sign it changed, so a button that only
+ * copies leaves you pressing it again to be sure. The label becomes the confirmation
+ * and goes back on its own, and the live region says it for anyone not watching the
+ * button.
+ */
+function CopyButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => setCopied(true))
+      }}
+      className="rounded-lg border border-line px-3 py-1.5 text-sm transition hover:bg-sunken"
+    >
+      <span aria-hidden="true">{copied ? 'Copied' : label}</span>
+      <span className="sr-only" role="status">
+        {copied ? `${label}: copied to the clipboard` : label}
+      </span>
+    </button>
   )
 }

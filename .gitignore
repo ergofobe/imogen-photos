@@ -8,3 +8,6 @@ data/
 .DS_Store
 coverage/
 *.log
+
+# Copied in at build time from the @scalar/api-reference devDependency.
+packages/web/public/scalar.js

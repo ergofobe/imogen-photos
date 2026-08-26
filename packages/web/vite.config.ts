@@ -32,6 +32,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,woff2,svg}'],
+        // The API reference viewer is 3.8 MB and is not part of the app. Precaching it
+        // would put a developer tool into every phone that installs the library, and
+        // it exceeds the precache size limit anyway.
+        globIgnores: ['**/scalar.js'],
         // A self-hosted app is updated by whoever runs the server, and a stale shell
         // hanging around until every tab closes makes an upgrade look like it failed.
         skipWaiting: true,

@@ -6,7 +6,14 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!**/drizzle", "!**/dev-dist"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!**/drizzle",
+      "!**/dev-dist",
+      "!**/public/scalar.js"
+    ]
   },
   "formatter": {
     "enabled": true,

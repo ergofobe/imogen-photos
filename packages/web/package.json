@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prebuild": "bun run copy:scalar",
+    "copy:scalar": "bun run scripts/copy-scalar.ts"
   },
   "dependencies": {
     "@imogen/sdk": "workspace:*",
@@ -17,6 +19,7 @@
     "react-router": "^7.9.0"
   },
   "devDependencies": {
+    "@scalar/api-reference": "^1.66.1",
     "@tailwindcss/vite": "^4.1.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
