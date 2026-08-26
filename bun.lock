@@ -10,6 +10,19 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/sdk": {
+      "name": "@imogen/sdk",
+      "version": "0.1.0",
+      "dependencies": {
+        "@imogen/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "@imogen/server": "workspace:*",
+        "drizzle-orm": "^0.44.6",
+        "hono": "^4.10.3",
+        "sharp": "^0.35.4",
+      },
+    },
     "packages/server": {
       "name": "@imogen/server",
       "version": "0.1.0",
@@ -177,6 +190,8 @@
     "@img/sharp-win32-ia32": ["@img/sharp-win32-ia32@0.35.4", "", { "os": "win32", "cpu": "ia32" }, "sha512-kqRsbaa5CS6KHlpxnN7WhE6vAAugXyZButpRdvDWetlv6Qv4N9WTcrWzF7tXfB9T7MsoadqdI8hmwLq6UlLvtw=="],
 
     "@img/sharp-win32-x64": ["@img/sharp-win32-x64@0.35.4", "", { "os": "win32", "cpu": "x64" }, "sha512-XtmnYhBcrORsJ4XJngyzr/EWP0hRZLAZRFaApdKuviyqF78+ylxh2y06ZmtULAMOnObJ3ucpN0AcwSWnMowTRg=="],
+
+    "@imogen/sdk": ["@imogen/sdk@workspace:packages/sdk"],
 
     "@imogen/server": ["@imogen/server@workspace:packages/server"],
 

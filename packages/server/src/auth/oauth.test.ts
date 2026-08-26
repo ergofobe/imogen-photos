@@ -76,10 +76,22 @@ describe('dynamic client registration', () => {
     expect(client.redirect_uris).toEqual(['http://127.0.0.1:49152/callback'])
   })
 
-  test('accepts a custom scheme redirect so mobile apps can register', async () => {
+  test('accepts a reverse-DNS private-use scheme', async () => {
     const client = await registerClient({ redirect_uris: ['com.example.app:/oauth'] })
 
     expect(client.redirect_uris).toEqual(['com.example.app:/oauth'])
+  })
+
+  test('accepts a plain private-use scheme, which is what most mobile apps use', async () => {
+    const client = await registerClient({ redirect_uris: ['myapp://oauth'] })
+
+    expect(client.redirect_uris).toEqual(['myapp://oauth'])
+  })
+
+  test('still rejects plain http to a remote host', async () => {
+    await expect(registerClient({ redirect_uris: ['http://evil.example.com/cb'] })).rejects.toThrow(
+      'invalid_redirect_uri',
+    )
   })
 
   test('narrows requested scopes to those imogen actually grants', async () => {

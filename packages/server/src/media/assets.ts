@@ -18,6 +18,9 @@ import { albumAssets, assets } from '../db/schema.ts'
 import { forbidden, notFound } from '../lib/errors.ts'
 import { toAsset } from './serialize.ts'
 
+/** Kept identical to the translate() in the generated search vector. */
+const SEARCH_PUNCTUATION = '._-/\\'
+
 export type AssetPage = {
   items: Asset[]
   nextCursor: string | null
@@ -136,8 +139,10 @@ export class AssetService {
 
     if (query.q?.trim()) {
       // websearch_to_tsquery takes arbitrary user text: no escaping, no syntax errors.
+      // The query must be punctuation-normalised exactly as the index is, or searching
+      // "shot-3" compiles to 'shot' <-> '-3' and misses the indexed 'shot','3'.
       conditions.push(
-        sql`${assets.searchVector} @@ websearch_to_tsquery('simple', ${query.q.trim()})`,
+        sql`${assets.searchVector} @@ websearch_to_tsquery('simple', translate(${query.q.trim()}, ${SEARCH_PUNCTUATION}, '     '))`,
       )
     }
 

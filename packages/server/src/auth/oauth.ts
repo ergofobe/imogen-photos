@@ -74,9 +74,9 @@ export type RefreshInput = {
 
 /**
  * A redirect URI is acceptable if it is https, a loopback http address (which native
- * apps need for the system browser flow), or a non-http custom scheme (which mobile
- * apps register). Plain http to a remote host is not, because the code would travel
- * in the clear.
+ * apps need for the system browser flow), or any private-use scheme such as
+ * `myapp://oauth` (RFC 8252). Plain http to a remote host is not, because the
+ * authorization code would travel in the clear.
  */
 function assertValidRedirectUri(uri: string): void {
   let parsed: URL
@@ -94,8 +94,8 @@ function assertValidRedirectUri(uri: string): void {
     if (loopback.includes(parsed.hostname)) return
     throw new OAuthError('invalid_redirect_uri', 'http redirect URIs must target loopback')
   }
-  if (parsed.protocol.includes('.')) return // custom scheme, e.g. com.example.app:
-  throw new OAuthError('invalid_redirect_uri', `unsupported scheme ${parsed.protocol}`)
+  // Everything else is a private-use scheme the operating system routes back to the app.
+  return
 }
 
 function narrowScopes(requested: string | string[] | undefined): OAuthScope[] {
