@@ -277,6 +277,54 @@ describe('albums and sharing', () => {
     expect(await response.json()).toMatchObject({ added: 0, skipped: 1, assetCount: 1 })
   })
 
+  test('an album shows a cover as soon as it holds a photograph', async () => {
+    const { cookie, albumId, assetId } = await setup()
+    await jsonRequest(`/api/v1/albums/${albumId}/assets`, 'POST', { assetIds: [assetId] }, cookie)
+
+    const listed = await request('/api/v1/albums', { headers: { Cookie: cookie } })
+    const { items } = (await listed.json()) as { items: Array<{ coverAssetId: string | null }> }
+
+    expect(items[0]?.coverAssetId).toBe(assetId)
+  })
+
+  test('a chosen cover is not overruled by the first photograph', async () => {
+    const { cookie, albumId, assetId } = await setup()
+    const second = (await (await upload(cookie, await makePhoto('second.jpg'))).json()) as {
+      asset: { id: string }
+    }
+    await jsonRequest(
+      `/api/v1/albums/${albumId}/assets`,
+      'POST',
+      { assetIds: [assetId, second.asset.id] },
+      cookie,
+    )
+
+    await jsonRequest(
+      `/api/v1/albums/${albumId}`,
+      'PATCH',
+      { coverAssetId: second.asset.id },
+      cookie,
+    )
+
+    const listed = await request('/api/v1/albums', { headers: { Cookie: cookie } })
+    const { items } = (await listed.json()) as { items: Array<{ coverAssetId: string | null }> }
+    expect(items[0]?.coverAssetId).toBe(second.asset.id)
+  })
+
+  test('a vaulted photograph is never the face of an album', async () => {
+    const { cookie, albumId, assetId } = await setup()
+    await jsonRequest(`/api/v1/albums/${albumId}/assets`, 'POST', { assetIds: [assetId] }, cookie)
+    // Vaulted directly: what is under test is the cover query, not the route that
+    // sets the column, and driving the vault over HTTP drags its cookie in with it.
+    await harness.db.execute(sql`update assets set vaulted_at = now() where id = ${assetId}`)
+
+    const listed = await request('/api/v1/albums', { headers: { Cookie: cookie } })
+    const { items } = (await listed.json()) as { items: Array<{ coverAssetId: string | null }> }
+
+    // The whole point of the vault is that these do not turn up anywhere else.
+    expect(items[0]?.coverAssetId).toBeNull()
+  })
+
   test('a share link lets an anonymous visitor see the album', async () => {
     const { cookie, albumId } = await setup()
     const link = (await (

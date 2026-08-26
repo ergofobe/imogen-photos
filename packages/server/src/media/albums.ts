@@ -46,6 +46,32 @@ function hashSharePassword(password: string): Promise<string> {
   return Bun.password.hash(password, SHARE_PASSWORD_HASH)
 }
 
+/**
+ * The photograph that stands for an album.
+ *
+ * Derived rather than stored. Nothing was ever setting `cover_asset_id`, so albums
+ * were made and stayed faceless — and keeping it up to date would mean touching it
+ * whenever a photo is added, removed, trashed or vaulted, with every one of those a
+ * chance for the cover to point at something that should not be seen.
+ *
+ * An explicitly chosen cover still wins. Trashed and vaulted photographs are excluded:
+ * the vault exists so its contents appear nowhere else, and an album tile is
+ * emphatically somewhere else.
+ */
+const coverAssetId = sql<string | null>`coalesce(
+  ${albums.coverAssetId},
+  (
+    select ${albumAssets.assetId}
+    from ${albumAssets}
+    join ${assets} on ${assets.id} = ${albumAssets.assetId}
+    where ${albumAssets.albumId} = ${albums.id}
+      and ${assets.deletedAt} is null
+      and ${assets.vaultedAt} is null
+    order by ${albumAssets.position}, ${albumAssets.addedAt}
+    limit 1
+  )
+)`
+
 export class AlbumService {
   constructor(private readonly db: Database) {}
 
@@ -55,6 +81,7 @@ export class AlbumService {
         album: albums,
         assetCount: sql<number>`count(${albumAssets.assetId})::int`,
         shareSlug: sql<string | null>`max(${shareLinks.slug})`,
+        cover: coverAssetId,
       })
       .from(albums)
       .leftJoin(albumAssets, eq(albumAssets.albumId, albums.id))
@@ -62,11 +89,18 @@ export class AlbumService {
       .where(eq(albums.ownerId, ownerId))
       .groupBy(albums.id)
       .orderBy(desc(albums.updatedAt))
-    return rows.map((r) => toAlbum(r.album, Number(r.assetCount), r.shareSlug))
+    return rows.map((r) =>
+      toAlbum({ ...r.album, coverAssetId: r.cover }, Number(r.assetCount), r.shareSlug),
+    )
   }
 
   async get(ownerId: string, albumId: string): Promise<Album> {
-    const [row] = await this.db.select().from(albums).where(eq(albums.id, albumId)).limit(1)
+    const [row] = await this.db
+      .select({ album: albums, cover: coverAssetId })
+      .from(albums)
+      .where(eq(albums.id, albumId))
+      .limit(1)
+      .then((rows) => rows.map((r) => ({ ...r.album, coverAssetId: r.cover })))
     if (!row) throw notFound('No such album')
     if (row.ownerId !== ownerId) throw forbidden('That album belongs to someone else')
 
