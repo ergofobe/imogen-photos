@@ -28,6 +28,10 @@ export function AdminAccounts() {
 
   return (
     <div className="space-y-10">
+      {/* Inviting comes first: it is the thing an administrator comes here to do, and
+          putting it under the list would bury it below a hundred accounts. */}
+      <Invitations invites={invites ?? []} onChanged={refresh} />
+
       <section>
         <header className="mb-4">
           <h2 className="heading-display text-xl">Accounts</h2>
@@ -51,8 +55,6 @@ export function AdminAccounts() {
           </ul>
         )}
       </section>
-
-      <Invitations invites={invites ?? []} onChanged={refresh} />
     </div>
   )
 }

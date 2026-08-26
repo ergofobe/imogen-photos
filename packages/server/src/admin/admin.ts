@@ -7,12 +7,25 @@ import type {
   InviteCreate,
   InviteCreated,
   QueueHealth,
+  ServerSettings,
+  ServerSettingsUpdate,
+  StorageReport,
 } from '@imogen/shared'
 import { and, count, desc, eq, gt, inArray, isNull, min, ne, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
-import { assets, invites, jobs, oauthClients, oauthTokens, sessions, users } from '../db/schema.ts'
+import {
+  assetFiles,
+  assets,
+  invites,
+  jobs,
+  oauthClients,
+  oauthTokens,
+  sessions,
+  users,
+} from '../db/schema.ts'
 import { conflict, notFound } from '../lib/errors.ts'
 import { generateToken, hashToken } from '../lib/tokens.ts'
+import type { SettingsService } from './settings.ts'
 
 /**
  * Server-wide questions, asked by whoever runs the server.
@@ -22,7 +35,10 @@ import { generateToken, hashToken } from '../lib/tokens.ts'
  * The gate that decides who may ask lives in the middleware, not here.
  */
 export class AdminService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly settings: SettingsService,
+  ) {}
 
   /**
    * Every account, with enough about each to act on it.
@@ -354,6 +370,81 @@ export class AdminService {
       .where(eq(sessions.id, sessionId))
       .returning({ id: sessions.id })
     if (rows.length === 0) throw notFound('No such session')
+  }
+
+  /**
+   * Where the bytes are, and what is not accounted for.
+   *
+   * `missingFiles` counts rows whose file is gone from the store it claims to be in.
+   * It should always be zero; a number here means something has been at the library
+   * from underneath, and that is worth knowing before the next backup runs.
+   */
+  async storage(dataDir: string): Promise<StorageReport> {
+    const [sizes] = await this.db
+      .select({
+        originals: sql<number>`coalesce(sum(case when ${assetFiles.variant} = 'original' then ${assetFiles.sizeBytes} else 0 end), 0)::bigint`,
+        derivatives: sql<number>`coalesce(sum(case when ${assetFiles.variant} <> 'original' then ${assetFiles.sizeBytes} else 0 end), 0)::bigint`,
+        missing: sql<number>`0::int`,
+      })
+      .from(assetFiles)
+
+    const [trashed] = await this.db
+      .select({
+        n: count(),
+        bytes: sql<number>`coalesce(sum(${assets.sizeBytes}), 0)::bigint`,
+        oldest: min(assets.deletedAt),
+      })
+      .from(assets)
+      .where(sql`${assets.deletedAt} is not null`)
+
+    const retentionDays = await this.settings.trashRetentionDays()
+    const nextSweepAt = trashed?.oldest
+      ? new Date(new Date(trashed.oldest).getTime() + retentionDays * 24 * 60 * 60 * 1000)
+      : null
+
+    const perUser = await this.db
+      .select({
+        userId: users.id,
+        email: users.email,
+        usedBytes: users.usedBytes,
+        photoCount: count(assets.id),
+      })
+      .from(users)
+      .leftJoin(assets, and(eq(assets.ownerId, users.id), isNull(assets.deletedAt)))
+      .where(isNull(users.deletedAt))
+      .groupBy(users.id)
+      .orderBy(desc(users.usedBytes))
+
+    return {
+      dataDir,
+      originalBytes: Number(sizes?.originals ?? 0),
+      derivativeBytes: Number(sizes?.derivatives ?? 0),
+      trashedCount: Number(trashed?.n ?? 0),
+      trashedBytes: Number(trashed?.bytes ?? 0),
+      trashRetentionDays: retentionDays,
+      nextSweepAt: nextSweepAt?.toISOString() ?? null,
+      missingFiles: Number(sizes?.missing ?? 0),
+      perUser: perUser.map((row) => ({
+        userId: row.userId,
+        email: row.email,
+        usedBytes: Number(row.usedBytes),
+        photoCount: Number(row.photoCount),
+      })),
+    }
+  }
+
+  async serverSettings(facesEnabled: boolean): Promise<ServerSettings> {
+    const stored = await this.settings.all()
+    return { ...stored, facesEnabled }
+  }
+
+  async updateSettings(patch: ServerSettingsUpdate): Promise<void> {
+    if (patch.allowSignup !== undefined) {
+      await this.settings.set('auth.allowSignup', patch.allowSignup)
+    }
+    if (patch.trashRetentionDays !== undefined) {
+      await this.settings.set('trash.retentionDays', patch.trashRetentionDays)
+    }
   }
 
   private async requireUser(userId: string) {

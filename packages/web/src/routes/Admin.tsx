@@ -4,6 +4,8 @@ import { Link } from 'react-router'
 import { AdminAccounts } from '../components/admin/AdminAccounts.tsx'
 import { AdminClients } from '../components/admin/AdminClients.tsx'
 import { AdminProcessing } from '../components/admin/AdminProcessing.tsx'
+import { AdminSettings } from '../components/admin/AdminSettings.tsx'
+import { AdminStorage } from '../components/admin/AdminStorage.tsx'
 
 type SectionId = 'accounts' | 'processing' | 'clients' | 'storage' | 'settings' | 'shares'
 
@@ -78,7 +80,9 @@ export function Admin({ user }: { user: User }) {
           {active === 'accounts' && <AdminAccounts />}
           {active === 'processing' && <AdminProcessing />}
           {active === 'clients' && <AdminClients />}
-          {!['accounts', 'processing', 'clients'].includes(active) && <NotBuiltYet />}
+          {active === 'storage' && <AdminStorage />}
+          {active === 'settings' && <AdminSettings />}
+          {active === 'shares' && <NotBuiltYet />}
         </main>
       </div>
     </div>

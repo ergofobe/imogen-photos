@@ -623,3 +623,81 @@ describe('apps and sessions', () => {
     )
   })
 })
+
+describe('server settings', () => {
+  const trySignup = (email: string) =>
+    request('/api/v1/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'a-sufficiently-long-password', name: 'Someone' }),
+    })
+
+  test('closing sign-up takes effect without a restart', async () => {
+    const admin = await signUp('first@example.com')
+    // Proven open first, so the assertion below cannot pass for the wrong reason.
+    expect((await trySignup('early@example.com')).status).toBe(200)
+
+    await asAdmin('/api/v1/admin/settings', 'PATCH', { allowSignup: false }, admin.cookie)
+
+    expect((await trySignup('late@example.com')).status).toBe(403)
+  })
+
+  test('opening it again lets people in', async () => {
+    const admin = await signUp('first@example.com')
+    await asAdmin('/api/v1/admin/settings', 'PATCH', { allowSignup: false }, admin.cookie)
+    await asAdmin('/api/v1/admin/settings', 'PATCH', { allowSignup: true }, admin.cookie)
+
+    expect((await trySignup('welcome@example.com')).status).toBe(200)
+  })
+
+  test('an invitation still works while sign-up is closed', async () => {
+    const admin = await signUp('first@example.com')
+    await asAdmin('/api/v1/admin/settings', 'PATCH', { allowSignup: false }, admin.cookie)
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', {}, admin.cookie)
+    const { token } = (await created.json()) as { token: string }
+
+    expect((await signUpWithInvite('invited@example.com', token)).status).toBe(200)
+  })
+
+  test('the login page is told what the stored setting says', async () => {
+    const admin = await signUp('first@example.com')
+    await asAdmin('/api/v1/admin/settings', 'PATCH', { allowSignup: false }, admin.cookie)
+
+    const response = await request('/api/v1/auth/config')
+    const body = (await response.json()) as { allowSignup: boolean }
+
+    expect(body.allowSignup).toBe(false)
+  })
+
+  test('settings are not readable by an ordinary account', async () => {
+    await signUp('first@example.com')
+    const { cookie } = await signUp('second@example.com')
+
+    const response = await request('/api/v1/admin/settings', { headers: { Cookie: cookie } })
+
+    expect(response.status).toBe(404)
+  })
+})
+
+describe('storage', () => {
+  test('reports the retention window and what is in the trash', async () => {
+    const admin = await signUp('first@example.com')
+    await harness.db.execute(
+      sql`insert into assets (owner_id, type, status, original_filename, mime_type, checksum, size_bytes, original_path, captured_at, deleted_at)
+          values (${admin.user.id}, 'image', 'ready', 'gone.jpg', 'image/jpeg', ${'b'.repeat(64)}, 2048, 'x/2.jpg', now(), now())`,
+    )
+
+    const response = await request('/api/v1/admin/storage', { headers: { Cookie: admin.cookie } })
+    const body = (await response.json()) as {
+      trashedCount: number
+      trashedBytes: number
+      trashRetentionDays: number
+      perUser: Array<{ email: string }>
+    }
+
+    expect(body.trashedCount).toBe(1)
+    expect(body.trashedBytes).toBe(2048)
+    expect(body.trashRetentionDays).toBeGreaterThan(0)
+    expect(body.perUser.map((u) => u.email)).toContain('first@example.com')
+  })
+})

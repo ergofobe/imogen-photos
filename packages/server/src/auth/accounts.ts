@@ -40,7 +40,7 @@ export function toPublicUser(row: UserRow): User {
 export class AccountService {
   constructor(
     private readonly db: Database,
-    private readonly options: { allowSignup: boolean },
+    private readonly options: { allowSignup: () => Promise<boolean> },
   ) {}
 
   async countUsers(): Promise<number> {
@@ -76,7 +76,7 @@ export class AccountService {
     }
 
     // Somebody has to be able to get in, so the first account is always permitted.
-    if (!isFirstUser && !invite && !this.options.allowSignup) {
+    if (!isFirstUser && !invite && !(await this.options.allowSignup())) {
       throw new AuthError('signup_disabled', 'Sign-up is disabled on this server', 403)
     }
     if (await this.findByEmail(request.email)) {

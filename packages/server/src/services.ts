@@ -1,4 +1,5 @@
 import { AdminService } from './admin/admin.ts'
+import { SettingsService } from './admin/settings.ts'
 import { AccountService } from './auth/accounts.ts'
 import { OAuthService } from './auth/oauth.ts'
 import { OidcService } from './auth/oidc.ts'
@@ -27,6 +28,7 @@ export type Services = {
   oidc: OidcService | null
   assets: AssetService
   admin: AdminService
+  settings: SettingsService
   albums: AlbumService
   vault: VaultService
   faces: FaceService
@@ -49,7 +51,11 @@ export function createServices(config: Config, database?: Database): Services {
   })
   const queue = new JobQueue(db, { concurrency: config.jobConcurrency })
 
-  const accounts = new AccountService(db, { allowSignup: config.allowSignup })
+  const settings = new SettingsService(db, {
+    allowSignup: config.allowSignup,
+    trashRetentionDays: config.trashRetentionDays,
+  })
+  const accounts = new AccountService(db, { allowSignup: () => settings.allowSignup() })
   const sessions = new SessionService(db)
   const oauth = new OAuthService(db, { publicUrl: config.publicUrl })
   const oidc = config.oidc
@@ -57,7 +63,7 @@ export function createServices(config: Config, database?: Database): Services {
     : null
 
   const assets = new AssetService(db)
-  const admin = new AdminService(db)
+  const admin = new AdminService(db, settings)
   const albums = new AlbumService(db)
   const vault = new VaultService(db, { secret: config.secret })
   const models = new ModelStore(config.modelsDir)
@@ -74,7 +80,7 @@ export function createServices(config: Config, database?: Database): Services {
     // up the thumbnail appearing in the timeline.
     if (await faces.isEnabled()) await queue.enqueue(FACE_DETECT_JOB, { assetId })
   })
-  registerMaintenanceJobs(queue, { db, config, library, thumbnails, sessions })
+  registerMaintenanceJobs(queue, { db, config, library, thumbnails, sessions, settings })
   registerFaceJobs(queue, { db, faces, models, queue })
 
   return {
@@ -87,6 +93,7 @@ export function createServices(config: Config, database?: Database): Services {
     oidc,
     assets,
     admin,
+    settings,
     albums,
     vault,
     faces,

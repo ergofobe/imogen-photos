@@ -7,7 +7,7 @@ import { AccountService, AuthError } from './accounts.ts'
 
 const harness = await createTestDatabase()
 const db: Database = harness.db
-const accounts = new AccountService(db, { allowSignup: true })
+const accounts = new AccountService(db, { allowSignup: async () => true })
 
 afterAll(() => harness.close())
 

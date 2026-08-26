@@ -10,6 +10,9 @@ import {
   InviteCreate,
   InviteCreated,
   QueueHealth,
+  ServerSettings,
+  ServerSettingsUpdate,
+  StorageReport,
 } from '@imogen/shared'
 import { type AppEnv, requireHiddenAdmin } from '../auth/middleware.ts'
 import { created, ERROR_RESPONSES, NO_CONTENT, ok, security } from './openapi.ts'
@@ -280,6 +283,58 @@ export function createAdminRoutes() {
         .get('services')
         .admin.revokeSession(c.req.valid('param').id, c.get('principal').sessionId)
       return c.body(null, 204)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/storage',
+      tags: ['Admin'],
+      summary: 'Where the bytes are',
+      security: security(),
+      responses: { ...ok(StorageReport, 'The storage report'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      return c.json(await services.admin.storage(services.config.dataDir), 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/settings',
+      tags: ['Admin'],
+      summary: 'Settings that can be changed without a restart',
+      security: security(),
+      responses: { ...ok(ServerSettings, 'The settings'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const facesEnabled = await services.faces.isEnabled()
+      return c.json(await services.admin.serverSettings(facesEnabled), 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/settings',
+      tags: ['Admin'],
+      summary: 'Change a setting',
+      description: 'Takes effect immediately. The stored value wins over the environment.',
+      security: security(),
+      request: { body: { content: { 'application/json': { schema: ServerSettingsUpdate } } } },
+      responses: { ...ok(ServerSettings, 'The settings'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const patch = c.req.valid('json')
+      await services.admin.updateSettings(patch)
+      if (patch.facesEnabled !== undefined) await services.faces.setEnabled(patch.facesEnabled)
+      const facesEnabled = await services.faces.isEnabled()
+      return c.json(await services.admin.serverSettings(facesEnabled), 200)
     },
   )
 

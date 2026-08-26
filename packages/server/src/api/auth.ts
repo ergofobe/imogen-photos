@@ -28,11 +28,11 @@ export function createAuthRoutes() {
       responses: ok(AuthConfig, 'Sign-in options for this server'),
     }),
     async (c) => {
-      const { accounts, config, oidc } = c.get('services')
+      const { accounts, oidc, settings } = c.get('services')
       const needsSetup = (await accounts.countUsers()) === 0
       return c.json(
         AuthConfig.parse({
-          allowSignup: config.allowSignup,
+          allowSignup: await settings.allowSignup(),
           needsSetup,
           oidc: oidc
             ? {

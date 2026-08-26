@@ -9,7 +9,7 @@ import { SessionService } from './sessions.ts'
 
 const harness = await createTestDatabase()
 const db: Database = harness.db
-const accounts = new AccountService(db, { allowSignup: true })
+const accounts = new AccountService(db, { allowSignup: async () => true })
 const sessionSvc = new SessionService(db)
 
 afterAll(() => harness.close())
@@ -42,7 +42,7 @@ describe('account creation', () => {
   })
 
   test('refuses a second signup when signup is disabled', async () => {
-    const closed = new AccountService(db, { allowSignup: false })
+    const closed = new AccountService(db, { allowSignup: async () => false })
     await closed.signup({ email: 'a@example.com', password: 'a-long-password', name: 'A' })
 
     await expect(
@@ -51,7 +51,7 @@ describe('account creation', () => {
   })
 
   test('still allows the very first signup when signup is disabled', async () => {
-    const closed = new AccountService(db, { allowSignup: false })
+    const closed = new AccountService(db, { allowSignup: async () => false })
 
     const user = await closed.signup({
       email: 'a@example.com',

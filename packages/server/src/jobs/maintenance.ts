@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, lte, sql } from 'drizzle-orm'
+import type { SettingsService } from '../admin/settings.ts'
 import type { SessionService } from '../auth/sessions.ts'
 import type { Database } from '../db/index.ts'
 import { assetFiles, assets, uploadSessions, users } from '../db/schema.ts'
@@ -16,6 +17,7 @@ export type MaintenanceDeps = {
   library: LocalStorage
   thumbnails: LocalStorage
   sessions: SessionService
+  settings: SettingsService
 }
 
 export function registerMaintenanceJobs(queue: JobQueue, deps: MaintenanceDeps): void {
@@ -37,7 +39,8 @@ export function registerMaintenanceJobs(queue: JobQueue, deps: MaintenanceDeps):
  * are invisible garbage that nothing will ever clean up.
  */
 export async function sweepTrash(deps: MaintenanceDeps): Promise<number> {
-  const cutoff = new Date(Date.now() - deps.config.trashRetentionDays * 24 * 60 * 60 * 1000)
+  const retentionDays = await deps.settings.trashRetentionDays()
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
   const doomed = await deps.db
     .select({ id: assets.id, ownerId: assets.ownerId, sizeBytes: assets.sizeBytes })
     .from(assets)
