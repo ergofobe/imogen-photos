@@ -1,6 +1,7 @@
 import type { AuthConfig } from '@imogen/shared'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import { Wordmark } from '../components/Wordmark.tsx'
 import { imogen } from '../lib/client.ts'
 
@@ -9,6 +10,7 @@ import { imogen } from '../lib/client.ts'
  * screen, because there is nothing yet to sign in to — and the copy says so plainly.
  */
 export function Login({ onSignedIn }: { onSignedIn: () => void }) {
+  const navigate = useNavigate()
   const { data: config } = useQuery<AuthConfig>({
     queryKey: ['auth-config'],
     queryFn: () => imogen.auth.config(),
@@ -36,8 +38,18 @@ export function Login({ onSignedIn }: { onSignedIn: () => void }) {
     try {
       if (isCreating) await imogen.auth.signup({ email, password, name })
       else await imogen.auth.login({ email, password })
-      if (returnTo.startsWith('/')) window.location.href = returnTo
-      else onSignedIn()
+
+      onSignedIn()
+      /*
+       * `replace`, so signing in does not leave /login sitting in the history. A full
+       * page load here is what made the back gesture from a photo land on the sign-in
+       * screen instead of the gallery.
+       *
+       * An OAuth consent URL is not a client route, so that one still needs a real
+       * navigation.
+       */
+      if (returnTo.startsWith('/oauth/')) window.location.replace(returnTo)
+      else navigate(returnTo.startsWith('/') ? returnTo : '/', { replace: true })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not sign in')
     } finally {

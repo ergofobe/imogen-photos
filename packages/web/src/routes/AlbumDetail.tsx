@@ -1,16 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { Viewer } from '../components/Viewer.tsx'
+import { useViewerParam } from '../hooks/useViewerParam.ts'
 import { imogen } from '../lib/client.ts'
 
 export function AlbumDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [openId, setOpenId] = useState<string | null>(null)
+  const { openId, open: openPhoto, replace: showPhoto, close: closePhoto } = useViewerParam()
 
   const { data: album, isPending } = useQuery({
     queryKey: ['album', id],
@@ -116,7 +116,7 @@ export function AlbumDetail() {
         <PhotoGrid
           assets={assets}
           selected={new Set()}
-          onOpen={(asset) => setOpenId(asset.id)}
+          onOpen={(asset) => openPhoto(asset.id)}
           onToggleSelect={() => {}}
         />
       )}
@@ -126,16 +126,16 @@ export function AlbumDetail() {
           asset={assets[openIndex]}
           hasPrevious={openIndex > 0}
           hasNext={openIndex < assets.length - 1}
-          onClose={() => setOpenId(null)}
-          onPrevious={() => setOpenId(assets[openIndex - 1]?.id ?? null)}
-          onNext={() => setOpenId(assets[openIndex + 1]?.id ?? null)}
+          onClose={() => closePhoto()}
+          onPrevious={() => showPhoto(assets[openIndex - 1]?.id ?? '')}
+          onNext={() => showPhoto(assets[openIndex + 1]?.id ?? '')}
           onToggleFavorite={(asset) => {
             void imogen.assets
               .update(asset.id, { favorite: !asset.favorite })
               .then(() => queryClient.invalidateQueries({ queryKey: ['album', id] }))
           }}
           onTrash={(asset) => {
-            setOpenId(null)
+            closePhoto()
             void imogen.assets
               .trash([asset.id])
               .then(() => queryClient.invalidateQueries({ queryKey: ['album', id] }))

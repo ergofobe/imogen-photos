@@ -5,6 +5,7 @@ import { useParams } from 'react-router'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { Viewer } from '../components/Viewer.tsx'
 import { Wordmark } from '../components/Wordmark.tsx'
+import { useViewerParam } from '../hooks/useViewerParam.ts'
 
 type ShareResponse =
   | { locked: true }
@@ -15,7 +16,7 @@ export function SharedAlbum() {
   const { slug = '' } = useParams()
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const { openId, open: openPhoto, replace: showPhoto, close: closePhoto } = useViewerParam()
 
   const { data, refetch, isPending } = useQuery<ShareResponse>({
     queryKey: ['share', slug],
@@ -91,7 +92,7 @@ export function SharedAlbum() {
       <PhotoGrid
         assets={assets}
         selected={new Set()}
-        onOpen={(asset) => setOpenId(asset.id)}
+        onOpen={(asset) => openPhoto(asset.id)}
         onToggleSelect={() => {}}
       />
 
@@ -100,9 +101,9 @@ export function SharedAlbum() {
           asset={assets[openIndex]}
           hasPrevious={openIndex > 0}
           hasNext={openIndex < assets.length - 1}
-          onClose={() => setOpenId(null)}
-          onPrevious={() => setOpenId(assets[openIndex - 1]?.id ?? null)}
-          onNext={() => setOpenId(assets[openIndex + 1]?.id ?? null)}
+          onClose={() => closePhoto()}
+          onPrevious={() => showPhoto(assets[openIndex - 1]?.id ?? '')}
+          onNext={() => showPhoto(assets[openIndex + 1]?.id ?? '')}
           onToggleFavorite={() => {}}
           onTrash={() => {}}
         />

@@ -1,12 +1,13 @@
 import type { Asset, AssetQuery } from '@imogen/shared'
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { SelectionBar } from '../components/SelectionBar.tsx'
 import { Viewer } from '../components/Viewer.tsx'
 import { useSelection } from '../hooks/useSelection.ts'
+import { useViewerParam } from '../hooks/useViewerParam.ts'
 import { imogen } from '../lib/client.ts'
 
 type Props = {
@@ -19,7 +20,7 @@ type Props = {
 
 export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) {
   const queryClient = useQueryClient()
-  const [openId, setOpenId] = useState<string | null>(null)
+  const { openId, open: openPhoto, replace: showPhoto, close: closePhoto } = useViewerParam()
 
   const key = ['assets', query] as const
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } = useInfiniteQuery({
@@ -96,9 +97,9 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
   const step = useCallback(
     (delta: number) => {
       const next = assets[openIndex + delta]
-      if (next) setOpenId(next.id)
+      if (next) showPhoto(next.id)
     },
-    [assets, openIndex],
+    [assets, openIndex, showPhoto],
   )
 
   if (isPending) return <TimelineSkeleton title={title} />
@@ -121,7 +122,7 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
         <PhotoGrid
           assets={assets}
           selected={selected}
-          onOpen={(asset) => setOpenId(asset.id)}
+          onOpen={(asset) => openPhoto(asset.id)}
           onToggleSelect={(asset, shiftKey) => toggle(asset.id, shiftKey)}
           onReachEnd={() => {
             if (hasNextPage && !isFetchingNextPage) void fetchNextPage()
@@ -165,12 +166,12 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
           asset={open}
           hasPrevious={openIndex > 0}
           hasNext={openIndex < assets.length - 1}
-          onClose={() => setOpenId(null)}
+          onClose={() => closePhoto()}
           onPrevious={() => step(-1)}
           onNext={() => step(1)}
           onToggleFavorite={(asset) => favourite.mutate(asset)}
           onTrash={(asset) => {
-            setOpenId(null)
+            closePhoto()
             trash.mutate([asset.id])
           }}
         />

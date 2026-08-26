@@ -6,6 +6,7 @@ import { PhotoGrid } from '../components/PhotoGrid.tsx'
 import { SelectionBar } from '../components/SelectionBar.tsx'
 import { Viewer } from '../components/Viewer.tsx'
 import { useSelection } from '../hooks/useSelection.ts'
+import { useViewerParam } from '../hooks/useViewerParam.ts'
 import { imogen } from '../lib/client.ts'
 
 /**
@@ -15,7 +16,7 @@ import { imogen } from '../lib/client.ts'
  */
 export function VaultRoute() {
   const queryClient = useQueryClient()
-  const [openId, setOpenId] = useState<string | null>(null)
+  const { openId, open: openPhoto, replace: showPhoto, close: closePhoto } = useViewerParam()
 
   const { data: status, isPending } = useQuery({
     queryKey: ['vault-status'],
@@ -82,7 +83,7 @@ export function VaultRoute() {
         <PhotoGrid
           assets={assets}
           selected={selected}
-          onOpen={(asset) => setOpenId(asset.id)}
+          onOpen={(asset) => openPhoto(asset.id)}
           onToggleSelect={(asset, shiftKey) => toggle(asset.id, shiftKey)}
         />
       ) : (
@@ -112,12 +113,12 @@ export function VaultRoute() {
           asset={assets[openIndex] as Asset}
           hasPrevious={openIndex > 0}
           hasNext={openIndex < assets.length - 1}
-          onClose={() => setOpenId(null)}
-          onPrevious={() => setOpenId(assets[openIndex - 1]?.id ?? null)}
-          onNext={() => setOpenId(assets[openIndex + 1]?.id ?? null)}
+          onClose={() => closePhoto()}
+          onPrevious={() => showPhoto(assets[openIndex - 1]?.id ?? '')}
+          onNext={() => showPhoto(assets[openIndex + 1]?.id ?? '')}
           onToggleFavorite={() => {}}
           onTrash={(asset) => {
-            setOpenId(null)
+            closePhoto()
             void imogen.assets.trash([asset.id]).then(refresh)
           }}
         />
