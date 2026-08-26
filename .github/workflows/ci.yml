@@ -44,12 +44,15 @@ jobs:
 
       # ffmpeg decodes RAW and video; libheif handles HEIC, which ffmpeg mis-decodes when
       # the image is tiled. exiftool and heif-enc build the fixtures the media tests need,
-      # so HEIC and EXIF are genuinely exercised here rather than skipped.
+      # so HEIC and EXIF are genuinely exercised here rather than skipped. Encoding a HEIC
+      # additionally needs the x265 plugin — without it heif-enc reports "No HEVC encoder
+      # available" and the fixtures silently do not appear. Decoding, which is all the
+      # application itself does, needs no plugin.
       - name: Install media tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ffmpeg libheif-examples libimage-exiftool-perl
+            ffmpeg libheif-examples libimage-exiftool-perl libheif-plugin-x265
 
       - run: bun install --frozen-lockfile
 
