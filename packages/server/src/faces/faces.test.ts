@@ -277,6 +277,115 @@ describe.skipIf(!canRun)('grouping faces into people', () => {
   })
 })
 
+describe.skipIf(!canRun)('photos with several people in them', () => {
+  /** Builds one photo containing the given sitters, side by side. */
+  async function groupPhoto(fixtures: string[], name: string) {
+    counter++
+    const relative = `${ownerId}/${name}`
+    await mkdir(join(config.libraryDir, ownerId), { recursive: true })
+
+    const size = 640
+    const tiles = await Promise.all(
+      fixtures.map((f) =>
+        sharp(join(FACE_FIXTURES, f)).resize(size, size, { fit: 'cover' }).toBuffer(),
+      ),
+    )
+    await sharp({
+      create: {
+        width: size * fixtures.length + 40,
+        height: size + 40,
+        channels: 3,
+        background: { r: 230, g: 228, b: 224 },
+      },
+    })
+      .composite(tiles.map((input, i) => ({ input, left: 20 + i * size, top: 20 })))
+      .jpeg({ quality: 92 })
+      .toFile(join(config.libraryDir, relative))
+
+    const [row] = await db
+      .insert(assets)
+      .values({
+        ownerId,
+        type: 'image',
+        status: 'ready',
+        originalFilename: name,
+        mimeType: 'image/jpeg',
+        checksum: counter.toString(16).padStart(64, '0'),
+        sizeBytes: 5000,
+        originalPath: relative,
+        capturedAt: new Date(),
+      })
+      .returning()
+    return row!
+  }
+
+  test('finds every face in the photo', async () => {
+    const photo = await groupPhoto(['person-a.png', 'person-b.png', 'person-c.png'], 'group.jpg')
+
+    expect(await service.processAsset(photo.id)).toBe(3)
+    expect(await service.facesForAsset(ownerId, photo.id)).toHaveLength(3)
+  })
+
+  test('gives each face to a different person', async () => {
+    const photo = await groupPhoto(['person-a.png', 'person-b.png', 'person-c.png'], 'group.jpg')
+    await service.processAsset(photo.id)
+
+    const found = await service.facesForAsset(ownerId, photo.id)
+    const owners = new Set(found.map((f) => f.personId))
+    expect(owners.size).toBe(3)
+  })
+
+  test('joins people already known from their own portraits', async () => {
+    const alone = await addPhoto('person-a.png')
+    await service.processAsset(alone.id)
+    const before = await service.listPeople(ownerId)
+    expect(before).toHaveLength(1)
+
+    const photo = await groupPhoto(['person-a.png', 'person-b.png'], 'together.jpg')
+    await service.processAsset(photo.id)
+
+    // Anna is recognised rather than re-invented; only her companion is new.
+    const after = await service.listPeople(ownerId)
+    expect(after).toHaveLength(2)
+    const anna = after.find((p) => p.id === before[0]!.id)
+    expect(anna?.faceCount).toBe(2)
+  })
+
+  test('a group photo appears once in each person’s photos, not once per face', async () => {
+    const photo = await groupPhoto(['person-a.png', 'person-b.png'], 'together.jpg')
+    await service.processAsset(photo.id)
+
+    for (const person of await service.listPeople(ownerId)) {
+      const photos = await service.photosOf(ownerId, person.id)
+      expect(photos.map((p) => p.id)).toEqual([photo.id])
+    }
+  })
+
+  test('every face in a group photo belongs to somebody', async () => {
+    const photo = await groupPhoto(['person-a.png', 'person-b.png', 'person-c.png'], 'group.jpg')
+    await service.processAsset(photo.id)
+
+    const stored = await db.select().from(faces)
+    expect(stored).toHaveLength(3)
+    expect(stored.every((f) => f.personId !== null)).toBe(true)
+  })
+
+  test('vaulting a group photo removes it from everybody', async () => {
+    const alone = await addPhoto('person-a.png')
+    await service.processAsset(alone.id)
+    const photo = await groupPhoto(['person-a.png', 'person-b.png'], 'together.jpg')
+    await service.processAsset(photo.id)
+
+    await db.update(assets).set({ vaultedAt: new Date() }).where(eq(assets.id, photo.id))
+    await service.forgetAsset(photo.id, ownerId)
+
+    // Anna keeps her own portrait; her companion, seen only there, is gone.
+    const after = await service.listPeople(ownerId)
+    expect(after).toHaveLength(1)
+    expect(after[0]!.faceCount).toBe(1)
+  })
+})
+
 describe.skipIf(!canRun)('correcting the grouping', () => {
   async function twoPeople() {
     const a = await addPhoto('person-a.png')
