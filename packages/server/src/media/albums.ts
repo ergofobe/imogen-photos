@@ -126,7 +126,19 @@ export class AlbumService {
       .where(
         and(eq(albumAssets.albumId, albumId), isNull(assets.deletedAt), isNull(assets.vaultedAt)),
       )
-      .orderBy(albumAssets.position, desc(assets.capturedAt))
+      /*
+       * Newest first, the same as the timeline.
+       *
+       * This used to lead with `position`, which is assigned as things are inserted
+       * and so held the order they happened to be added in — and since the query that
+       * gathers them has no ORDER BY of its own, that order came from whatever the
+       * database felt like returning. The result read as scrambled, or as the reverse
+       * of the timeline, depending on the day.
+       *
+       * The id breaks ties so two photographs taken in the same second do not swap
+       * places between requests.
+       */
+      .orderBy(desc(assets.capturedAt), desc(assets.id))
     return { ...album, assets: rows.map((r) => toAsset(r.asset)) }
   }
 
@@ -176,6 +188,9 @@ export class AlbumService {
       .where(
         and(eq(assets.ownerId, ownerId), inArray(assets.id, assetIds), isNull(assets.vaultedAt)),
       )
+      // Nothing displays `position` today, but a column that decides an order should
+      // not be filled from whatever order the rows came back in.
+      .orderBy(desc(assets.capturedAt), desc(assets.id))
     const ownedIds = owned.map((a) => a.id)
 
     const [maxPosition] = await this.db
@@ -378,7 +393,7 @@ export class AlbumService {
           isNull(assets.vaultedAt),
         ),
       )
-      .orderBy(albumAssets.position)
+      .orderBy(desc(assets.capturedAt), desc(assets.id))
 
     return {
       link,

@@ -277,6 +277,38 @@ describe('albums and sharing', () => {
     expect(await response.json()).toMatchObject({ added: 0, skipped: 1, assetCount: 1 })
   })
 
+  test('an album is ordered newest first, whatever order things were added in', async () => {
+    const { cookie, albumId } = await setup()
+
+    const madeOn = async (name: string, capturedAt: string) => {
+      const uploaded = (await (await upload(cookie, await makePhoto(name))).json()) as {
+        asset: { id: string }
+      }
+      await harness.db.execute(
+        sql`update assets set captured_at = ${capturedAt} where id = ${uploaded.asset.id}`,
+      )
+      return uploaded.asset.id
+    }
+
+    const middle = await madeOn('middle.jpg', '2021-06-01T12:00:00Z')
+    const oldest = await madeOn('oldest.jpg', '2019-01-01T12:00:00Z')
+    const newest = await madeOn('newest.jpg', '2024-12-25T12:00:00Z')
+
+    // Added deliberately out of order, which is what the timeline would never do.
+    await jsonRequest(
+      `/api/v1/albums/${albumId}/assets`,
+      'POST',
+      { assetIds: [middle, oldest, newest] },
+      cookie,
+    )
+
+    const response = await request(`/api/v1/albums/${albumId}`, { headers: { Cookie: cookie } })
+    const body = (await response.json()) as { assets: Array<{ id: string; capturedAt: string }> }
+    const added = body.assets.filter((a) => [middle, oldest, newest].includes(a.id))
+
+    expect(added.map((a) => a.id)).toEqual([newest, middle, oldest])
+  })
+
   test('an album shows a cover as soon as it holds a photograph', async () => {
     const { cookie, albumId, assetId } = await setup()
     await jsonRequest(`/api/v1/albums/${albumId}/assets`, 'POST', { assetIds: [assetId] }, cookie)
