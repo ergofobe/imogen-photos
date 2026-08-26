@@ -1,5 +1,9 @@
 {
-  "extends": "./tsconfig.base.json",
-  "include": ["packages/*/src/**/*", "packages/*/*.config.ts"],
-  "exclude": ["**/dist/**", "**/node_modules/**"]
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/sdk" },
+    { "path": "./packages/server" },
+    { "path": "./packages/web" }
+  ]
 }
