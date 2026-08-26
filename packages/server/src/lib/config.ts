@@ -27,6 +27,10 @@ const EnvSchema = z.object({
   IMOGEN_OIDC_ADMIN_CLAIM: z.string().default('groups'),
   IMOGEN_OIDC_ADMIN_VALUE: z.string().optional(),
   IMOGEN_OIDC_LABEL: z.string().default('Single sign-on'),
+  IMOGEN_OIDC_ACCOUNT_URL: z
+    .url()
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
 
   IMOGEN_FFMPEG_PATH: z.string().default('ffmpeg'),
   IMOGEN_FFPROBE_PATH: z.string().default('ffprobe'),
@@ -43,6 +47,8 @@ export type OidcConfig = {
   adminClaim: string
   adminValue: string | undefined
   label: string
+  /** Overrides the guess at where the provider's account page lives. */
+  accountUrl: string | undefined
 }
 
 export type Config = {
@@ -135,6 +141,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
           adminClaim: e.IMOGEN_OIDC_ADMIN_CLAIM,
           adminValue: e.IMOGEN_OIDC_ADMIN_VALUE,
           label: e.IMOGEN_OIDC_LABEL,
+          accountUrl: e.IMOGEN_OIDC_ACCOUNT_URL,
         }
       : null,
     ffmpegPath: e.IMOGEN_FFMPEG_PATH,

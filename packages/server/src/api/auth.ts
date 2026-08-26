@@ -4,6 +4,7 @@ import {
   AuthConfig,
   LoginRequest,
   PasswordChangeRequest,
+  ProfileUpdate,
   SignupRequest,
   User,
 } from '@imogen/shared'
@@ -34,7 +35,12 @@ export function createAuthRoutes() {
           allowSignup: config.allowSignup,
           needsSetup,
           oidc: oidc
-            ? { enabled: true, label: oidc.label, startUrl: '/api/v1/auth/oidc/start' }
+            ? {
+                enabled: true,
+                label: oidc.label,
+                startUrl: '/api/v1/auth/oidc/start',
+                accountUrl: oidc.accountUrl,
+              }
             : { enabled: false },
         }),
         200,
@@ -115,6 +121,37 @@ export function createAuthRoutes() {
       responses: { ...ok(User, 'The signed-in account'), ...ERROR_RESPONSES },
     }),
     async (c) => c.json(toPublicUser(c.get('principal').user), 200),
+  )
+
+  authed.openapi(
+    createRoute({
+      method: 'patch',
+      path: '/me',
+      tags: ['Auth'],
+      summary: 'Edit your name or email address',
+      description:
+        'Accounts linked to an identity provider cannot change these here — the provider ' +
+        'owns them and imogen re-reads them at every sign-in.',
+      security: security(),
+      request: { body: { content: { 'application/json': { schema: ProfileUpdate } } } },
+      responses: { ...ok(User, 'The updated account'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const principal = c.get('principal')
+      // Identity-level changes need a person, not a token.
+      if (principal.via !== 'session') {
+        throw unauthorized('Sign in through the web interface to change your profile')
+      }
+      try {
+        return c.json(
+          await services.accounts.updateProfile(principal.user.id, c.req.valid('json')),
+          200,
+        )
+      } catch (error) {
+        throw asHttpError(error)
+      }
+    },
   )
 
   authed.openapi(

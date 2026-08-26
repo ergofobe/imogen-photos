@@ -1,11 +1,13 @@
 import type { User } from '@imogen/shared'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { ProfileForm } from '../components/ProfileForm.tsx'
 import { signOut } from '../components/Shell.tsx'
 import { imogen } from '../lib/client.ts'
 import { formatBytes } from '../lib/format.ts'
 
 export function Settings({ user }: { user: User }) {
+  const queryClient = useQueryClient()
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: () => imogen.assets.stats(),
@@ -33,10 +35,14 @@ export function Settings({ user }: { user: User }) {
       <h1 className="heading-display mb-6 text-2xl md:text-[28px]">Settings</h1>
 
       <Section title="Account">
-        <Row label="Name" value={user.name} />
-        <Row label="Email" value={user.email} />
-        <Row label="Role" value={user.role === 'admin' ? 'Administrator' : 'User'} />
-        {user.oidcSubject && <Row label="Sign-in" value="Single sign-on" />}
+        <ProfileForm
+          user={user}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['me'] })}
+        />
+        <div className="pt-3">
+          <Row label="Role" value={user.role === 'admin' ? 'Administrator' : 'User'} />
+          {user.oidcSubject && <Row label="Sign-in" value="Single sign-on" />}
+        </div>
       </Section>
 
       {stats && (

@@ -1,5 +1,6 @@
 import * as client from 'openid-client'
 import type { OidcConfig } from '../lib/config.ts'
+import { deriveAccountUrl } from './account-url.ts'
 import { AuthError } from './accounts.ts'
 
 export type OidcClaims = {
@@ -8,6 +9,8 @@ export type OidcClaims = {
   name: string
   avatarUrl: string | null
   isAdmin: boolean
+  /** True when this deployment maps a provider group to administrator at all. */
+  adminMappingConfigured: boolean
 }
 
 /** Transient state for one in-flight login, held server-side between redirect and callback. */
@@ -36,6 +39,11 @@ export class OidcService {
 
   get label(): string {
     return this.settings.label
+  }
+
+  /** Where someone edits the name and email this provider owns. */
+  get accountUrl(): string | null {
+    return deriveAccountUrl(this.settings.issuer, this.settings.accountUrl)
   }
 
   private async discover(): Promise<client.Configuration> {
@@ -123,6 +131,7 @@ export class OidcService {
         name: name ?? email.split('@')[0]!,
         avatarUrl: picture,
         isAdmin: this.grantsAdmin(groups),
+        adminMappingConfigured: Boolean(this.settings.adminValue),
       },
       returnTo: flow.returnTo,
     }

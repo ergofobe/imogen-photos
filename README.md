@@ -59,10 +59,20 @@ IMOGEN_OIDC_CLIENT_ID: ...
 IMOGEN_OIDC_CLIENT_SECRET: ...
 IMOGEN_OIDC_LABEL: Sign in with Authentik
 IMOGEN_OIDC_ADMIN_VALUE: imogen-admins   # members of this group become administrators
+IMOGEN_OIDC_ACCOUNT_URL: ''              # optional; guessed for Authentik and Keycloak
 ```
 
 Existing local accounts are linked by verified email address, so turning on SSO does not
 strand anyone.
+
+The provider owns the name and email of the accounts it manages: imogen re-reads them at
+every sign-in, shows them read-only in settings, and links out to the provider's own
+account page. Set `IMOGEN_OIDC_ACCOUNT_URL` if that link needs to point somewhere other
+than the guess.
+
+Administrator status follows `IMOGEN_OIDC_ADMIN_VALUE` when you set it — including
+removing it when someone leaves the group. Leave it unset and imogen never touches roles,
+so an administrator promoted locally stays one.
 
 ### Behind a reverse proxy
 
