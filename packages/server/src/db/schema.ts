@@ -59,6 +59,19 @@ export const users = pgTable(
     /** Throttles guessing. Cleared on a successful unlock. */
     vaultFailedAttempts: integer('vault_failed_attempts').notNull().default(0),
     vaultLockedUntil: timestamp('vault_locked_until', { withTimezone: true }),
+    /**
+     * Set when an administrator takes access away without deleting the account.
+     * Checked wherever a caller is resolved, not only at sign-in: a session issued
+     * before the account was disabled must stop working at once.
+     */
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /**
+     * Set when the account is deleted. A tombstone rather than a removed row: the
+     * photographs are on their way to the trash sweep and they cascade from here, so
+     * dropping the row now would destroy immediately what is meant to be recoverable.
+     * The sweep removes the row once the last of its assets has gone.
+     */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     quotaBytes: bigint('quota_bytes', { mode: 'number' }),
     usedBytes: bigint('used_bytes', { mode: 'number' }).notNull().default(0),
     createdAt,
@@ -480,3 +493,32 @@ export type JobRow = typeof jobs.$inferSelect
 export type FaceRow = typeof faces.$inferSelect
 export type PersonRow = typeof people.$inferSelect
 export type UploadSessionRow = typeof uploadSessions.$inferSelect
+
+/**
+ * An invitation to open an account on a closed server.
+ *
+ * The alternative is opening public sign-up to add one person, which is the whole
+ * reason this table exists. Only the hash of the token is kept, like every other
+ * bearer token here: the link is shown to the administrator once and is not
+ * recoverable from the database afterwards.
+ */
+export const invites = pgTable(
+  'invites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull(),
+    /** Optional. When set, only this address may use the link. */
+    email: text('email'),
+    role: text('role', { enum: ['admin', 'user'] })
+      .notNull()
+      .default('user'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    acceptedBy: uuid('accepted_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt,
+  },
+  (t) => [uniqueIndex('invites_token_hash_key').on(t.tokenHash)],
+)

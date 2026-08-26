@@ -1,7 +1,15 @@
-import type { AdminUser } from '@imogen/shared'
-import { and, count, eq, isNull, sql } from 'drizzle-orm'
+import type {
+  AdminUser,
+  AdminUserUpdate,
+  Invite,
+  InviteCreate,
+  InviteCreated,
+} from '@imogen/shared'
+import { and, count, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
-import { assets, users } from '../db/schema.ts'
+import { assets, invites, sessions, users } from '../db/schema.ts'
+import { conflict, notFound } from '../lib/errors.ts'
+import { generateToken, hashToken } from '../lib/tokens.ts'
 
 /**
  * Server-wide questions, asked by whoever runs the server.
@@ -38,6 +46,7 @@ export class AdminService {
       })
       .from(users)
       .leftJoin(assets, and(eq(assets.ownerId, users.id), isNull(assets.deletedAt)))
+      .where(isNull(users.deletedAt))
       .groupBy(users.id)
       .orderBy(users.createdAt)
 
@@ -54,10 +63,159 @@ export class AdminService {
       updatedAt: row.updatedAt.toISOString(),
     }))
   }
+  /**
+   * Changes somebody's role, or takes their access away.
+   *
+   * Disabling revokes their sessions rather than only barring the next sign-in. A
+   * session already in a browser is a working key, and leaving it turning would make
+   * "disabled" mean "disabled tomorrow".
+   */
+  async updateUser(userId: string, patch: AdminUserUpdate): Promise<AdminUser> {
+    const target = await this.requireUser(userId)
+
+    const losingAnAdmin =
+      target.role === 'admin' && (patch.role === 'user' || patch.disabled === true)
+    if (losingAnAdmin) await this.refuseIfLastAdmin(userId)
+
+    await this.db
+      .update(users)
+      .set({
+        ...(patch.role ? { role: patch.role } : {}),
+        ...(patch.disabled === undefined ? {} : { disabledAt: patch.disabled ? new Date() : null }),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+
+    if (patch.disabled === true) {
+      await this.db.delete(sessions).where(eq(sessions.userId, userId))
+    }
+
+    return this.requireAdminUser(userId)
+  }
+
+  /**
+   * Removes an account and sends its photographs to the trash.
+   *
+   * Not a purge: the retention sweep that already exists will clear them in its own
+   * time, which leaves a window in which deleting the wrong row is survivable. The
+   * account itself goes immediately — the point is to end access.
+   */
+  async deleteUser(userId: string): Promise<void> {
+    const target = await this.requireUser(userId)
+    if (target.role === 'admin') await this.refuseIfLastAdmin(userId)
+
+    const now = new Date()
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(assets)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(and(eq(assets.ownerId, userId), isNull(assets.deletedAt)))
+
+      // A tombstone, not a removed row. Assets cascade from users, so deleting the
+      // row here would destroy this instant the very photographs the trash exists to
+      // hold on to. The sweep takes the row once the last of them has gone.
+      await tx
+        .update(users)
+        .set({ deletedAt: now, disabledAt: now, updatedAt: now })
+        .where(eq(users.id, userId))
+
+      await tx.delete(sessions).where(eq(sessions.userId, userId))
+    })
+  }
+
+  /** Sets a password on the administrator's behalf and ends every session it had. */
+  async resetPassword(userId: string, passwordHash: string): Promise<void> {
+    await this.requireUser(userId)
+    await this.db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+    // Whoever knew the old password should not keep a session that outlives it.
+    await this.db.delete(sessions).where(eq(sessions.userId, userId))
+  }
+
+  /**
+   * Makes an invitation and returns the only legible copy of its token.
+   *
+   * Stored as a hash, like every other bearer token here, so losing the link means
+   * making another rather than looking this one up.
+   */
+  async createInvite(actorId: string, input: InviteCreate): Promise<InviteCreated> {
+    const token = generateToken('imog_inv', 32)
+    const expiresAt = new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000)
+
+    const [row] = await this.db
+      .insert(invites)
+      .values({
+        tokenHash: hashToken(token),
+        email: input.email ?? null,
+        role: input.role,
+        createdBy: actorId,
+        expiresAt,
+      })
+      .returning()
+
+    return { ...toInvite(row!), token }
+  }
+
+  async invites(): Promise<Invite[]> {
+    const rows = await this.db.select().from(invites).orderBy(desc(invites.createdAt))
+    return rows.map(toInvite)
+  }
+
+  async revokeInvite(id: string): Promise<void> {
+    const rows = await this.db
+      .delete(invites)
+      .where(eq(invites.id, id))
+      .returning({ id: invites.id })
+    if (rows.length === 0) throw notFound('No such invitation')
+  }
+
+  private async requireUser(userId: string) {
+    const [row] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1)
+    if (!row) throw notFound('No such account')
+    return row
+  }
+
+  private async requireAdminUser(userId: string): Promise<AdminUser> {
+    const all = await this.users()
+    const found = all.find((u) => u.id === userId)
+    if (!found) throw notFound('No such account')
+    return found
+  }
+
+  /**
+   * Refuses a change that would leave the server with nobody able to administer it.
+   *
+   * Locking everyone out is not recoverable through any interface the server offers;
+   * it takes a hand on the database. Cheaper to decline.
+   */
+  private async refuseIfLastAdmin(userId: string): Promise<void> {
+    const [row] = await this.db
+      .select({ others: count() })
+      .from(users)
+      .where(and(eq(users.role, 'admin'), ne(users.id, userId), isNull(users.disabledAt)))
+    if (Number(row?.others ?? 0) === 0) {
+      throw conflict('This is the only administrator left, so the server would lock itself')
+    }
+  }
 }
 
 /** An account can hold both a password and an SSO subject once it has used each. */
 function signsInWith(hasPassword: boolean, hasOidc: boolean): AdminUser['signsInWith'] {
   if (hasPassword && hasOidc) return 'both'
   return hasOidc ? 'sso' : 'password'
+}
+
+function toInvite(row: typeof invites.$inferSelect): Invite {
+  const expired = row.expiresAt.getTime() <= Date.now()
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    acceptedAt: row.acceptedAt?.toISOString() ?? null,
+    state: row.acceptedAt ? 'accepted' : expired ? 'expired' : 'pending',
+  }
 }

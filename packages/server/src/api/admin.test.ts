@@ -15,7 +15,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await harness.db.execute(sql`truncate users, assets, albums, jobs, sessions cascade`)
+  await harness.db.execute(sql`truncate users, assets, albums, jobs, sessions, invites cascade`)
 })
 
 const request = (path: string, init: RequestInit = {}) =>
@@ -116,5 +116,322 @@ describe('listing accounts', () => {
     expect(raw).not.toContain('passwordHash')
     expect(raw).not.toContain('password_hash')
     expect(raw).not.toContain('vaultPassphraseHash')
+  })
+})
+
+const asAdmin = (path: string, method: string, body?: unknown, cookie = '') =>
+  request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+
+const login = (email: string) =>
+  request('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'a-sufficiently-long-password' }),
+  })
+
+const signUpWithInvite = (email: string, token: string) =>
+  request('/api/v1/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email,
+      password: 'a-sufficiently-long-password',
+      name: 'Invited',
+      invite: token,
+    }),
+  })
+
+describe('disabling an account', () => {
+  test('a session issued before the account was disabled stops working at once', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+
+    // Proven good first, so the assertion below cannot pass by accident.
+    const before = await request('/api/v1/assets', { headers: { Cookie: victim.cookie } })
+    expect(before.status).toBe(200)
+
+    await asAdmin(
+      `/api/v1/admin/users/${victim.user.id}`,
+      'PATCH',
+      { disabled: true },
+      admin.cookie,
+    )
+
+    const after = await request('/api/v1/assets', { headers: { Cookie: victim.cookie } })
+    expect(after.status).toBe(401)
+  })
+
+  /**
+   * Disabling revokes the sessions that exist, which is what makes the browser stop
+   * working. This checks the other half: a credential that outlives the revocation —
+   * an OAuth bearer token, or a session minted in the same instant — is refused when
+   * it is resolved, not merely absent. Without it the guard in the middleware is
+   * covered only by the deletion happening to have swept the same rows.
+   */
+  test('a credential that survives the revocation is still refused', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+    await asAdmin(
+      `/api/v1/admin/users/${victim.user.id}`,
+      'PATCH',
+      { disabled: true },
+      admin.cookie,
+    )
+
+    const revived = await services.sessions.create(victim.user.id, {})
+    const response = await request('/api/v1/assets', {
+      headers: { Cookie: `imogen_session=${revived.token}` },
+    })
+
+    expect(response.status).toBe(401)
+  })
+
+  test('a disabled account cannot sign in again', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+
+    await asAdmin(
+      `/api/v1/admin/users/${victim.user.id}`,
+      'PATCH',
+      { disabled: true },
+      admin.cookie,
+    )
+
+    expect((await login('second@example.com')).status).toBeGreaterThanOrEqual(400)
+  })
+
+  test('enabling gives the account back', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+    await asAdmin(
+      `/api/v1/admin/users/${victim.user.id}`,
+      'PATCH',
+      { disabled: true },
+      admin.cookie,
+    )
+
+    await asAdmin(
+      `/api/v1/admin/users/${victim.user.id}`,
+      'PATCH',
+      { disabled: false },
+      admin.cookie,
+    )
+
+    expect((await login('second@example.com')).status).toBe(200)
+  })
+})
+
+describe('the last administrator', () => {
+  test('cannot demote themselves and lock everyone out', async () => {
+    const admin = await signUp('first@example.com')
+
+    const response = await asAdmin(
+      `/api/v1/admin/users/${admin.user.id}`,
+      'PATCH',
+      { role: 'user' },
+      admin.cookie,
+    )
+
+    expect(response.status).toBe(409)
+  })
+
+  test('cannot disable themselves either', async () => {
+    const admin = await signUp('first@example.com')
+
+    const response = await asAdmin(
+      `/api/v1/admin/users/${admin.user.id}`,
+      'PATCH',
+      { disabled: true },
+      admin.cookie,
+    )
+
+    expect(response.status).toBe(409)
+  })
+
+  test('may step down once somebody else can take over', async () => {
+    const admin = await signUp('first@example.com')
+    const other = await signUp('second@example.com')
+    await asAdmin(`/api/v1/admin/users/${other.user.id}`, 'PATCH', { role: 'admin' }, admin.cookie)
+
+    const response = await asAdmin(
+      `/api/v1/admin/users/${admin.user.id}`,
+      'PATCH',
+      { role: 'user' },
+      admin.cookie,
+    )
+
+    expect(response.status).toBe(200)
+  })
+
+  test('a disabled administrator does not count as cover', async () => {
+    const admin = await signUp('first@example.com')
+    const other = await signUp('second@example.com')
+    await asAdmin(`/api/v1/admin/users/${other.user.id}`, 'PATCH', { role: 'admin' }, admin.cookie)
+    await asAdmin(`/api/v1/admin/users/${other.user.id}`, 'PATCH', { disabled: true }, admin.cookie)
+
+    const response = await asAdmin(
+      `/api/v1/admin/users/${admin.user.id}`,
+      'PATCH',
+      { role: 'user' },
+      admin.cookie,
+    )
+
+    expect(response.status).toBe(409)
+  })
+})
+
+describe('invitations', () => {
+  test('the link is shown once and is not recoverable afterwards', async () => {
+    const admin = await signUp('first@example.com')
+
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', {}, admin.cookie)
+    const invite = (await created.json()) as { token: string; id: string }
+    expect(invite.token).toBeTruthy()
+
+    const listed = await request('/api/v1/admin/invites', { headers: { Cookie: admin.cookie } })
+
+    expect(await listed.text()).not.toContain(invite.token)
+  })
+
+  test('lets somebody in while public sign-up stays shut', async () => {
+    const admin = await signUp('first@example.com')
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', {}, admin.cookie)
+    const { token } = (await created.json()) as { token: string }
+
+    expect((await signUpWithInvite('invited@example.com', token)).status).toBe(200)
+  })
+
+  test('one invitation admits exactly one person', async () => {
+    const admin = await signUp('first@example.com')
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', {}, admin.cookie)
+    const { token } = (await created.json()) as { token: string }
+
+    expect((await signUpWithInvite('one@example.com', token)).status).toBe(200)
+    expect((await signUpWithInvite('two@example.com', token)).status).toBeGreaterThanOrEqual(400)
+  })
+
+  test('an invitation addressed to someone is refused to anybody else', async () => {
+    const admin = await signUp('first@example.com')
+    const created = await asAdmin(
+      '/api/v1/admin/invites',
+      'POST',
+      { email: 'wanted@example.com' },
+      admin.cookie,
+    )
+    const { token } = (await created.json()) as { token: string }
+
+    expect(
+      (await signUpWithInvite('someone-else@example.com', token)).status,
+    ).toBeGreaterThanOrEqual(400)
+    expect((await signUpWithInvite('wanted@example.com', token)).status).toBe(200)
+  })
+
+  test('an invitation can hand over administration', async () => {
+    const admin = await signUp('first@example.com')
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', { role: 'admin' }, admin.cookie)
+    const { token } = (await created.json()) as { token: string }
+
+    const response = await signUpWithInvite('deputy@example.com', token)
+    const user = (await response.json()) as { role: string }
+
+    expect(user.role).toBe('admin')
+  })
+
+  test('an expired invitation is refused', async () => {
+    const admin = await signUp('first@example.com')
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', {}, admin.cookie)
+    const { token, id } = (await created.json()) as { token: string; id: string }
+
+    await harness.db.execute(
+      sql`update invites set expires_at = now() - interval '1 hour' where id = ${id}`,
+    )
+
+    expect((await signUpWithInvite('late@example.com', token)).status).toBeGreaterThanOrEqual(400)
+  })
+
+  test('a revoked invitation is refused', async () => {
+    const admin = await signUp('first@example.com')
+    const created = await asAdmin('/api/v1/admin/invites', 'POST', {}, admin.cookie)
+    const { token, id } = (await created.json()) as { token: string; id: string }
+
+    await asAdmin(`/api/v1/admin/invites/${id}`, 'DELETE', undefined, admin.cookie)
+
+    expect((await signUpWithInvite('revoked@example.com', token)).status).toBeGreaterThanOrEqual(
+      400,
+    )
+  })
+
+  test('a made-up token is refused', async () => {
+    await signUp('first@example.com')
+
+    expect((await signUpWithInvite('chancer@example.com', 'imog_inv_nonsense')).status).toBe(403)
+  })
+})
+
+describe('deleting an account', () => {
+  test('the photographs go to the trash rather than being destroyed', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+    await harness.db.execute(
+      sql`insert into assets (owner_id, type, status, original_filename, mime_type, checksum, size_bytes, original_path, captured_at)
+          values (${victim.user.id}, 'image', 'ready', 'x.jpg', 'image/jpeg', ${'a'.repeat(64)}, 10, 'x/1.jpg', now())`,
+    )
+
+    await asAdmin(`/api/v1/admin/users/${victim.user.id}`, 'DELETE', undefined, admin.cookie)
+
+    const rows = await harness.db.execute(
+      sql`select count(*)::int as n from assets where owner_id = ${victim.user.id} and deleted_at is not null`,
+    )
+    expect((rows[0] as { n: number }).n).toBe(1)
+  })
+
+  test('the account stops being able to sign in', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+
+    await asAdmin(`/api/v1/admin/users/${victim.user.id}`, 'DELETE', undefined, admin.cookie)
+
+    expect((await login('second@example.com')).status).toBeGreaterThanOrEqual(400)
+  })
+
+  test('its session dies with it', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+    expect((await request('/api/v1/assets', { headers: { Cookie: victim.cookie } })).status).toBe(
+      200,
+    )
+
+    await asAdmin(`/api/v1/admin/users/${victim.user.id}`, 'DELETE', undefined, admin.cookie)
+
+    const after = await request('/api/v1/assets', { headers: { Cookie: victim.cookie } })
+    expect(after.status).toBe(401)
+  })
+
+  test('the account is gone from the list even though the row survives for the sweep', async () => {
+    const admin = await signUp('first@example.com')
+    const victim = await signUp('second@example.com')
+
+    await asAdmin(`/api/v1/admin/users/${victim.user.id}`, 'DELETE', undefined, admin.cookie)
+
+    const listed = await request('/api/v1/admin/users', { headers: { Cookie: admin.cookie } })
+    const body = (await listed.json()) as { items: Array<{ email: string }> }
+    expect(body.items.map((u) => u.email)).toEqual(['first@example.com'])
+  })
+
+  test('the last administrator cannot delete themselves', async () => {
+    const admin = await signUp('first@example.com')
+
+    const response = await asAdmin(
+      `/api/v1/admin/users/${admin.user.id}`,
+      'DELETE',
+      undefined,
+      admin.cookie,
+    )
+
+    expect(response.status).toBe(409)
   })
 })

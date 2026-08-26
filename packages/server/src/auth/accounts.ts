@@ -1,7 +1,8 @@
 import type { PasswordChangeRequest, ProfileUpdate, SignupRequest, User } from '@imogen/shared'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
-import { type UserRow, users } from '../db/schema.ts'
+import { invites, type UserRow, users } from '../db/schema.ts'
+import { hashToken } from '../lib/tokens.ts'
 
 export class AuthError extends Error {
   readonly status: number
@@ -63,8 +64,19 @@ export class AccountService {
 
   async signup(request: SignupRequest): Promise<User> {
     const isFirstUser = (await this.countUsers()) === 0
+
+    // An invitation is the way onto a server with sign-up closed, so it is claimed
+    // before anything else is checked and its role decides what the account becomes.
+    const invite = request.invite ? await this.claimableInvite(request.invite) : null
+    if (request.invite && !invite) {
+      throw new AuthError('invite_invalid', 'That invitation is not valid', 403)
+    }
+    if (invite?.email && invite.email.toLowerCase() !== request.email.toLowerCase()) {
+      throw new AuthError('invite_invalid', 'That invitation is for a different address', 403)
+    }
+
     // Somebody has to be able to get in, so the first account is always permitted.
-    if (!isFirstUser && !this.options.allowSignup) {
+    if (!isFirstUser && !invite && !this.options.allowSignup) {
       throw new AuthError('signup_disabled', 'Sign-up is disabled on this server', 403)
     }
     if (await this.findByEmail(request.email)) {
@@ -78,16 +90,56 @@ export class AccountService {
         email: request.email,
         name: request.name,
         passwordHash,
-        role: isFirstUser ? 'admin' : 'user',
+        role: isFirstUser || invite?.role === 'admin' ? 'admin' : 'user',
       })
       .returning()
+
+    if (invite) {
+      // Marked rather than deleted, so the administrator can see it was taken up.
+      // Conditional on still being unaccepted, so two people racing the same link
+      // cannot both get in: the second update matches nothing.
+      const claimed = await this.db
+        .update(invites)
+        .set({ acceptedAt: new Date(), acceptedBy: row!.id })
+        .where(and(eq(invites.id, invite.id), isNull(invites.acceptedAt)))
+        .returning({ id: invites.id })
+
+      if (claimed.length === 0) {
+        await this.db.delete(users).where(eq(users.id, row!.id))
+        throw new AuthError('invite_invalid', 'That invitation has already been used', 403)
+      }
+    }
+
     return toPublicUser(row!)
+  }
+
+  /** An invitation that exists, has not been taken up, and has not run out. */
+  private async claimableInvite(token: string) {
+    const [row] = await this.db
+      .select()
+      .from(invites)
+      .where(
+        and(
+          eq(invites.tokenHash, hashToken(token)),
+          isNull(invites.acceptedAt),
+          gt(invites.expiresAt, new Date()),
+        ),
+      )
+      .limit(1)
+    return row ?? null
+  }
+
+  /** One place decides how a password is stored, whoever is setting it. */
+  hashPassword(password: string): Promise<string> {
+    return Bun.password.hash(password, ARGON2)
   }
 
   async verifyPassword(email: string, password: string): Promise<UserRow | null> {
     const row = await this.findByEmail(email)
     // OIDC-only accounts have no local password, so nothing can match.
     if (!row?.passwordHash) return null
+    // A disabled account is not a wrong password, but it is not a way in either.
+    if (row.disabledAt) return null
     return (await Bun.password.verify(password, row.passwordHash)) ? row : null
   }
 

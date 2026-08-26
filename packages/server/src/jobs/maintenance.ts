@@ -59,7 +59,24 @@ export async function sweepTrash(deps: MaintenanceDeps): Promise<number> {
       .where(eq(users.id, asset.ownerId))
   }
 
+  await removeEmptyTombstones(deps)
+
   return doomed.length
+}
+
+/**
+ * Drops deleted accounts once the last of their photographs has gone.
+ *
+ * Deleting an account leaves the row behind on purpose — assets cascade from it, so
+ * removing it at the time would destroy the very photographs the trash is holding.
+ * Once the sweep above has cleared them there is nothing left to protect.
+ */
+async function removeEmptyTombstones(deps: MaintenanceDeps): Promise<void> {
+  await deps.db.execute(sql`
+    delete from users
+    where deleted_at is not null
+      and not exists (select 1 from assets where assets.owner_id = users.id)
+  `)
 }
 
 /** Drops abandoned resumable uploads and the partial files they were writing. */

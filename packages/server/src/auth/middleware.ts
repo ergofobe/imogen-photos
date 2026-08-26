@@ -29,7 +29,7 @@ export async function resolvePrincipal(
     const grant = await services.oauth.verifyAccessToken(token)
     if (!grant) return null
     const user = await services.accounts.findById(grant.userId)
-    if (!user) return null
+    if (!user || user.disabledAt) return null
     return { user, scopes: grant.scopes, via: 'oauth', clientId: grant.clientId }
   }
 
@@ -37,7 +37,9 @@ export async function resolvePrincipal(
     const session = await services.sessions.resolve(cookieToken)
     if (!session) return null
     const user = await services.accounts.findById(session.userId)
-    if (!user) return null
+    // A disabled account keeps its rows but stops being a caller. Checked here rather
+    // than only at sign-in so a session already in a browser dies with the account.
+    if (!user || user.disabledAt) return null
     return { user, scopes: [...ALL_SCOPES], via: 'session', sessionId: session.sessionId }
   }
 
