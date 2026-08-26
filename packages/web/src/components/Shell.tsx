@@ -1,6 +1,7 @@
 import type { User } from '@imogen/shared'
 import { NavLink, useNavigate } from 'react-router'
 import { imogen } from '../lib/client.ts'
+import { PullToRefresh } from './PullToRefresh.tsx'
 import { ThemeSwitch } from './ThemeSwitch.tsx'
 import { Wordmark } from './Wordmark.tsx'
 
@@ -26,6 +27,8 @@ export function Shell({ user, children, onUpload }: Props) {
 
   return (
     <div className="min-h-dvh">
+      <PullToRefresh />
+
       {/* Desktop: a quiet rail. Mobile: a bottom bar. Same links, same order, same names. */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-paper px-3 py-5 md:flex">
         <div className="mb-7 px-2">

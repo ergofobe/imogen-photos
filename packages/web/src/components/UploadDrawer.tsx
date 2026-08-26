@@ -86,7 +86,12 @@ export function UploadDrawer({ open, onClose }: { open: boolean; onClose: () => 
   const failed = items.filter((i) => i.state === 'failed')
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-end sm:place-items-center">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add photos"
+      className="fixed inset-0 z-50 grid place-items-end sm:place-items-center"
+    >
       <button
         type="button"
         aria-label="Close"

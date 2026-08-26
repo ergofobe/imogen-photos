@@ -67,7 +67,12 @@
 
   html {
     background: var(--color-paper);
-    /* Overscroll on a photo grid should not reveal the browser's own background. */
+    /*
+     * Overscroll on a photo grid should not reveal the browser's own background, and the
+     * browser's pull-to-refresh reloads the whole page — which in an installed app means
+     * re-fetching the shell and losing your place. imogen implements the gesture itself
+     * and refetches only the data. See usePullToRefresh.
+     */
     overscroll-behavior-y: none;
   }
 
