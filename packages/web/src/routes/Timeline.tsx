@@ -27,6 +27,19 @@ export function Timeline({ title, query = {}, empty, mode = 'library' }: Props) 
     queryFn: ({ pageParam }) =>
       imogen.assets.list({ ...query, limit: 120, ...(pageParam ? { cursor: pageParam } : {}) }),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    /*
+     * An upload lands as `pending` and is thumbnailed by a background worker, so the
+     * timeline has to find out when that finishes. Polling runs only while something is
+     * actually in flight and stops the moment the library is settled — no upload, no
+     * traffic.
+     */
+    refetchInterval: (query) => {
+      const pages = query.state.data?.pages ?? []
+      const working = pages.some((page) =>
+        page.items.some((asset) => asset.status === 'pending' || asset.status === 'processing'),
+      )
+      return working ? 2000 : false
+    },
   })
 
   const assets = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data])

@@ -259,6 +259,9 @@ export function createAssetRoutes() {
       headers: {
         'Content-Type': file.mimeType,
         'Content-Length': String(file.sizeBytes),
+        // Bun serves a Range request from a file-backed Response on its own; advertising
+        // it is what tells a video player that scrubbing is available at all.
+        'Accept-Ranges': 'bytes',
         'Cache-Control': cacheControl,
         ETag: `"${asset.checksum.slice(0, 32)}-${variant}"`,
         'Content-Disposition':

@@ -68,10 +68,25 @@ export function PhotoTile({
         className="absolute inset-0 cursor-pointer"
       />
 
-      {asset.type === 'video' && asset.duration !== null && (
-        <span className="pointer-events-none absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white tabular-nums backdrop-blur-sm">
-          {formatDuration(asset.duration)}
-        </span>
+      {asset.type === 'video' && !pending && (
+        <>
+          <span className="pointer-events-none absolute inset-0 grid place-items-center">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-black/45 ring-1 ring-white/25 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="ml-0.5 h-4 w-4 fill-white drop-shadow"
+              >
+                <path d="M8 5.5v13l11-6.5z" />
+              </svg>
+            </span>
+          </span>
+          {asset.duration !== null && (
+            <span className="pointer-events-none absolute right-1.5 bottom-1.5 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white tabular-nums backdrop-blur-sm">
+              {formatDuration(asset.duration)}
+            </span>
+          )}
+        </>
       )}
 
       {asset.favorite && !selected && (

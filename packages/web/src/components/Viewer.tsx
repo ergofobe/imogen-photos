@@ -25,6 +25,7 @@ export function Viewer({
   onToggleFavorite,
   onTrash,
 }: Props) {
+  const isVideo = asset.type === 'video'
   const [showInfo, setShowInfo] = useState(false)
   const [chromeVisible, setChromeVisible] = useState(true)
   const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -34,8 +35,10 @@ export function Viewer({
   const wake = useCallback(() => {
     setChromeVisible(true)
     clearTimeout(idleTimer.current)
+    // A video keeps its chrome: hiding it would take the play controls away too.
+    if (isVideo) return
     idleTimer.current = setTimeout(() => setChromeVisible(false), IDLE_MS)
-  }, [])
+  }, [isVideo])
 
   useEffect(() => {
     wake()
@@ -45,8 +48,11 @@ export function Viewer({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') return showInfo ? setShowInfo(false) : onClose()
-      if (event.key === 'ArrowLeft') return onPrevious()
-      if (event.key === 'ArrowRight') return onNext()
+
+      // With a video focused, the arrow keys belong to its scrubber.
+      const onMedia = (event.target as HTMLElement | null)?.tagName === 'VIDEO'
+      if (event.key === 'ArrowLeft') return onMedia ? undefined : onPrevious()
+      if (event.key === 'ArrowRight') return onMedia ? undefined : onNext()
       if (event.key === 'i') return setShowInfo((v) => !v)
       if (event.key === 'f') return onToggleFavorite(asset)
     }
@@ -57,6 +63,7 @@ export function Viewer({
   // Swipe between photos on a phone, which is how people actually flick through a roll.
   const touchStart = useRef<{ x: number; y: number } | null>(null)
   const onTouchStart = (event: React.TouchEvent) => {
+    if ((event.target as HTMLElement | null)?.tagName === 'VIDEO') return
     const touch = event.touches[0]
     if (touch) touchStart.current = { x: touch.clientX, y: touch.clientY }
   }
@@ -98,12 +105,27 @@ export function Viewer({
 
       <div className="relative flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 items-center justify-center p-2 sm:p-6">
-          <img
-            key={asset.id}
-            src={`/api/v1/assets/${asset.id}/preview`}
-            alt={asset.description ?? asset.originalFilename}
-            className="max-h-full max-w-full object-contain drop-shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
-          />
+          {asset.type === 'video' ? (
+            // The original is served with range support, so scrubbing works.
+            <video
+              key={asset.id}
+              src={`/api/v1/assets/${asset.id}/original`}
+              poster={`/api/v1/assets/${asset.id}/preview`}
+              controls
+              playsInline
+              preload="metadata"
+              className="max-h-full max-w-full object-contain drop-shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+            >
+              <track kind="captions" />
+            </video>
+          ) : (
+            <img
+              key={asset.id}
+              src={`/api/v1/assets/${asset.id}/preview`}
+              alt={asset.description ?? asset.originalFilename}
+              className="max-h-full max-w-full object-contain drop-shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+            />
+          )}
 
           {hasPrevious && (
             <NavButton side="left" onClick={onPrevious} visible={chromeVisible} label="Previous" />
