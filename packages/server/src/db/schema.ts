@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
+  check,
   customType,
   doublePrecision,
   index,
@@ -262,9 +263,13 @@ export const shareLinks = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     slug: text('slug').notNull(),
-    albumId: uuid('album_id')
-      .notNull()
-      .references(() => albums.id, { onDelete: 'cascade' }),
+    /**
+     * A link points at exactly one thing. Both columns are nullable and a check
+     * constraint keeps precisely one set, so "an album or a photograph" is a rule the
+     * database holds rather than one every query has to remember.
+     */
+    albumId: uuid('album_id').references(() => albums.id, { onDelete: 'cascade' }),
+    assetId: uuid('asset_id').references(() => assets.id, { onDelete: 'cascade' }),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -277,6 +282,8 @@ export const shareLinks = pgTable(
   (t) => [
     uniqueIndex('share_links_slug_key').on(t.slug),
     index('share_links_album_idx').on(t.albumId),
+    index('share_links_asset_idx').on(t.assetId),
+    check('share_links_one_target', sql`(album_id is null) <> (asset_id is null)`),
   ],
 )
 

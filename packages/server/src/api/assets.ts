@@ -10,13 +10,15 @@ import {
   AssetVariant,
   LibraryStats,
   pageOf,
+  ShareLink,
+  ShareLinkCreate,
   TimelineBucket,
 } from '@imogen/shared'
 import { eq } from 'drizzle-orm'
 import { type AppEnv, requireAuth, requireScope } from '../auth/middleware.ts'
 import { assetFiles, assets } from '../db/schema.ts'
 import { badRequest, notFound } from '../lib/errors.ts'
-import { ERROR_RESPONSES, ok, security } from './openapi.ts'
+import { created, ERROR_RESPONSES, NO_CONTENT, ok, security } from './openapi.ts'
 import { assertVaultAccess, vaultIsOpen } from './vault.ts'
 
 const IdParam = z.object({ id: z.uuid() })
@@ -295,6 +297,79 @@ export function createAssetRoutes() {
       },
     })
   })
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{id}/share',
+      tags: ['Assets'],
+      summary: 'The public link for this photo, if it has one',
+      security: security(),
+      middleware: [requireScope('library:read')] as const,
+      request: { params: IdParam },
+      responses: {
+        ...ok(ShareLink.nullable(), 'The link, or null'),
+        ...ERROR_RESPONSES,
+      },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const link = await services.albums.assetShareLink(
+        c.get('principal').user.id,
+        c.req.valid('param').id,
+        services.config.publicUrl,
+      )
+      return c.json(link, 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{id}/share',
+      tags: ['Assets'],
+      summary: 'Create a public link to one photo',
+      description: 'Replaces any existing link, so a photo has at most one live URL.',
+      security: security(),
+      middleware: [requireScope('library:write')] as const,
+      request: {
+        params: IdParam,
+        body: { content: { 'application/json': { schema: ShareLinkCreate } } },
+      },
+      responses: { ...created(ShareLink, 'The share link'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const link = await services.albums.createAssetShareLink(
+        c.get('principal').user.id,
+        c.req.valid('param').id,
+        c.req.valid('json'),
+        services.config.publicUrl,
+      )
+      return c.json(link, 201)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/{id}/share',
+      tags: ['Assets'],
+      summary: 'Revoke a photo’s public link',
+      security: security(),
+      middleware: [requireScope('library:write')] as const,
+      request: { params: IdParam },
+      responses: { ...NO_CONTENT, ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      await services.albums.revokeAssetShareLink(
+        c.get('principal').user.id,
+        c.req.valid('param').id,
+      )
+      return c.body(null, 204)
+    },
+  )
 
   return app
 }

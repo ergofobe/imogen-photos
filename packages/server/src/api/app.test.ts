@@ -738,3 +738,88 @@ describe('MCP endpoint', () => {
     expect(body.result.content[0]!.text).not.toContain('private.jpg')
   })
 })
+
+describe('sharing a single photograph', () => {
+  /** Uploads and returns the asset, since the helper hands back the response. */
+  const addPhoto = async (cookie: string, name: string) => {
+    const response = await upload(cookie, await makePhoto(name))
+    return (await response.json()) as { asset: { id: string } }
+  }
+
+  test('the link opens the photo without signing in', async () => {
+    const { cookie } = await signUp()
+    const { asset } = await addPhoto(cookie, 'shared.jpg')
+
+    const created = await jsonRequest(`/api/v1/assets/${asset.id}/share`, 'POST', {}, cookie)
+    expect(created.status).toBe(201)
+    const link = (await created.json()) as { slug: string; assetId: string; albumId: string | null }
+    expect(link.assetId).toBe(asset.id)
+    expect(link.albumId).toBeNull()
+
+    const opened = await request(`/api/v1/share/${link.slug}`)
+    const body = (await opened.json()) as { album: { assets: Array<{ id: string }> } }
+
+    expect(opened.status).toBe(200)
+    expect(body.album.assets.map((a) => a.id)).toEqual([asset.id])
+  })
+
+  test('a slug for one photo is not a key to the rest of the library', async () => {
+    const { cookie } = await signUp()
+    const shared = await addPhoto(cookie, 'shared.jpg')
+    const other = await addPhoto(cookie, 'private.jpg')
+
+    const created = await jsonRequest(`/api/v1/assets/${shared.asset.id}/share`, 'POST', {}, cookie)
+    const { slug } = (await created.json()) as { slug: string }
+
+    // The preview is made by the queue, so serving one means waiting for it.
+    await services.queue.drain()
+
+    const reachable = await request(`/api/v1/share/${slug}/assets/${shared.asset.id}/preview`)
+    const refused = await request(`/api/v1/share/${slug}/assets/${other.asset.id}/preview`)
+
+    expect(reachable.status).toBe(200)
+    expect(refused.status).toBe(404)
+  })
+
+  test('revoking closes the link', async () => {
+    const { cookie } = await signUp()
+    const { asset } = await addPhoto(cookie, 'shared.jpg')
+    const created = await jsonRequest(`/api/v1/assets/${asset.id}/share`, 'POST', {}, cookie)
+    const { slug } = (await created.json()) as { slug: string }
+
+    await request(`/api/v1/assets/${asset.id}/share`, {
+      method: 'DELETE',
+      headers: { Cookie: cookie },
+    })
+
+    expect((await request(`/api/v1/share/${slug}`)).status).toBe(404)
+  })
+
+  test('a photo has at most one live link', async () => {
+    const { cookie } = await signUp()
+    const { asset } = await addPhoto(cookie, 'shared.jpg')
+
+    const first = await jsonRequest(`/api/v1/assets/${asset.id}/share`, 'POST', {}, cookie)
+    const firstSlug = ((await first.json()) as { slug: string }).slug
+    const second = await jsonRequest(`/api/v1/assets/${asset.id}/share`, 'POST', {}, cookie)
+    const secondSlug = ((await second.json()) as { slug: string }).slug
+
+    expect((await request(`/api/v1/share/${firstSlug}`)).status).toBe(404)
+    expect((await request(`/api/v1/share/${secondSlug}`)).status).toBe(200)
+  })
+
+  test('somebody else’s photo cannot be shared', async () => {
+    const owner = await signUp('owner@example.com')
+    const { asset } = await addPhoto(owner.cookie, 'mine.jpg')
+    const stranger = await signUp('stranger@example.com')
+
+    const response = await jsonRequest(
+      `/api/v1/assets/${asset.id}/share`,
+      'POST',
+      {},
+      stranger.cookie,
+    )
+
+    expect(response.status).toBe(404)
+  })
+})

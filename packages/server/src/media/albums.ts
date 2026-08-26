@@ -28,6 +28,18 @@ function toAlbum(row: AlbumRow, assetCount: number, shareSlug: string | null): A
   }
 }
 
+function toShareLink(row: typeof shareLinks.$inferSelect, publicUrl: string): ShareLink {
+  return {
+    slug: row.slug,
+    url: `${publicUrl}/share/${row.slug}`,
+    albumId: row.albumId,
+    assetId: row.assetId,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    allowDownload: row.allowDownload,
+    createdAt: row.createdAt.toISOString(),
+  }
+}
+
 const SHARE_PASSWORD_HASH = { algorithm: 'argon2id', memoryCost: 19456, timeCost: 2 } as const
 
 function hashSharePassword(password: string): Promise<string> {
@@ -200,14 +212,95 @@ export class AlbumService {
       })
       .returning()
 
-    return {
-      slug: row!.slug,
-      url: `${publicUrl}/share/${row!.slug}`,
-      albumId,
-      expiresAt: row!.expiresAt?.toISOString() ?? null,
-      allowDownload: row!.allowDownload,
-      createdAt: row!.createdAt.toISOString(),
-    }
+    return toShareLink(row!, publicUrl)
+  }
+
+  /**
+   * Shares one photograph.
+   *
+   * Same rules as an album: at most one live link per photo, so revoking is a single
+   * act rather than a hunt through everything ever made.
+   */
+  async createAssetShareLink(
+    ownerId: string,
+    assetId: string,
+    input: ShareLinkCreate,
+    publicUrl: string,
+  ): Promise<ShareLink> {
+    const [owned] = await this.db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(and(eq(assets.id, assetId), eq(assets.ownerId, ownerId), isNull(assets.deletedAt)))
+      .limit(1)
+    if (!owned) throw notFound('No such photo')
+
+    await this.db
+      .update(shareLinks)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(shareLinks.assetId, assetId), isNull(shareLinks.revokedAt)))
+
+    const slug = generateToken('s', 12).replace('s_', '')
+    const [row] = await this.db
+      .insert(shareLinks)
+      .values({
+        slug,
+        assetId,
+        createdBy: ownerId,
+        passwordHash: input.password ? await hashSharePassword(input.password) : null,
+        allowDownload: input.allowDownload,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+      })
+      .returning()
+
+    return toShareLink(row!, publicUrl)
+  }
+
+  async revokeAssetShareLink(ownerId: string, assetId: string): Promise<void> {
+    await this.db
+      .update(shareLinks)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(shareLinks.assetId, assetId),
+          eq(shareLinks.createdBy, ownerId),
+          isNull(shareLinks.revokedAt),
+        ),
+      )
+  }
+
+  /** The live link for one album, if it has one. */
+  async albumShareLink(
+    ownerId: string,
+    albumId: string,
+    publicUrl: string,
+  ): Promise<ShareLink | null> {
+    await this.get(ownerId, albumId)
+    const [row] = await this.db
+      .select()
+      .from(shareLinks)
+      .where(and(eq(shareLinks.albumId, albumId), isNull(shareLinks.revokedAt)))
+      .limit(1)
+    return row ? toShareLink(row, publicUrl) : null
+  }
+
+  /** The live link for one photograph, if it has one. */
+  async assetShareLink(
+    ownerId: string,
+    assetId: string,
+    publicUrl: string,
+  ): Promise<ShareLink | null> {
+    const [row] = await this.db
+      .select()
+      .from(shareLinks)
+      .where(
+        and(
+          eq(shareLinks.assetId, assetId),
+          eq(shareLinks.createdBy, ownerId),
+          isNull(shareLinks.revokedAt),
+        ),
+      )
+      .limit(1)
+    return row ? toShareLink(row, publicUrl) : null
   }
 
   async revokeShareLink(ownerId: string, albumId: string): Promise<void> {
@@ -223,9 +316,19 @@ export class AlbumService {
    * requiring the password. The caller decides whether the visitor has proved they know
    * it; this keeps the credential out of the query string.
    */
+  /**
+   * Resolves a public link, whether it points at an album or a single photograph.
+   *
+   * A photograph is presented as an album holding exactly it. That keeps one shape
+   * for the whole public surface — the membership check that stops a slug becoming a
+   * key to the entire library, the asset route, the page itself — rather than a
+   * second path through all of it that would need the same guards written twice.
+   */
   async openShare(slug: string): Promise<OpenedShare | null> {
     const link = await this.findLiveLink(slug)
     if (!link) return null
+    if (link.assetId) return this.openPhotoShare(link)
+    if (!link.albumId) return null
 
     const [album] = await this.db.select().from(albums).where(eq(albums.id, link.albumId)).limit(1)
     if (!album) return null
@@ -249,6 +352,35 @@ export class AlbumService {
       album: {
         ...toAlbum(album, rows.length, link.slug),
         assets: rows.map((r) => toAsset(r.asset)),
+      },
+    }
+  }
+
+  /** A single shared photograph, dressed as an album of one. */
+  private async openPhotoShare(link: typeof shareLinks.$inferSelect): Promise<OpenedShare | null> {
+    const [row] = await this.db
+      .select()
+      .from(assets)
+      .where(and(eq(assets.id, link.assetId!), isNull(assets.deletedAt), isNull(assets.vaultedAt)))
+      .limit(1)
+    if (!row) return null
+
+    const asset = toAsset(row)
+    return {
+      link,
+      requiresPassword: link.passwordHash !== null,
+      album: {
+        // The link's own id, so nothing here can be mistaken for a real album.
+        id: link.id,
+        ownerId: link.createdBy,
+        name: asset.originalFilename,
+        description: null,
+        coverAssetId: asset.id,
+        assetCount: 1,
+        createdAt: link.createdAt.toISOString(),
+        updatedAt: link.createdAt.toISOString(),
+        shareSlug: link.slug,
+        assets: [asset],
       },
     }
   }

@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { EmptyState } from '../components/EmptyState.tsx'
 import { PhotoGrid } from '../components/PhotoGrid.tsx'
+import { SharePanel } from '../components/SharePanel.tsx'
 import { Viewer } from '../components/Viewer.tsx'
 import { useViewerParam } from '../hooks/useViewerParam.ts'
 import { imogen } from '../lib/client.ts'
@@ -11,20 +13,13 @@ export function AlbumDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { openId, open: openPhoto, replace: showPhoto, close: closePhoto } = useViewerParam()
+  const [sharing, setSharing] = useState(false)
 
   const { data: album, isPending } = useQuery({
     queryKey: ['album', id],
     queryFn: () => imogen.albums.get(id),
   })
 
-  const share = useMutation({
-    mutationFn: () => imogen.albums.share(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['album', id] }),
-  })
-  const unshare = useMutation({
-    mutationFn: () => imogen.albums.unshare(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['album', id] }),
-  })
   const remove = useMutation({
     mutationFn: () => imogen.albums.remove(id),
     onSuccess: () => {
@@ -67,36 +62,14 @@ export function AlbumDetail() {
         </div>
 
         <div className="flex items-center gap-2">
-          {album.shareSlug ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(
-                    `${window.location.origin}/share/${album.shareSlug}`,
-                  )
-                }}
-                className="rounded-lg border border-line px-3 py-1.5 text-sm transition hover:bg-sunken"
-              >
-                Copy link
-              </button>
-              <button
-                type="button"
-                onClick={() => unshare.mutate()}
-                className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:text-ink"
-              >
-                Stop sharing
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => share.mutate()}
-              className="rounded-lg border border-line px-3 py-1.5 text-sm transition hover:bg-sunken"
-            >
-              Share
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setSharing((open) => !open)}
+            aria-expanded={sharing}
+            className="rounded-lg border border-line px-3 py-1.5 text-sm transition hover:bg-sunken"
+          >
+            {album.shareSlug ? 'Sharing' : 'Share'}
+          </button>
           <button
             type="button"
             onClick={() => remove.mutate()}
@@ -106,6 +79,12 @@ export function AlbumDetail() {
           </button>
         </div>
       </div>
+
+      {sharing && (
+        <div className="mb-6 max-w-xl">
+          <SharePanel target={{ kind: 'album', id }} onClose={() => setSharing(false)} />
+        </div>
+      )}
 
       {assets.length === 0 ? (
         <EmptyState

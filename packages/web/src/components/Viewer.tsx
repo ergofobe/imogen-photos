@@ -5,6 +5,7 @@ import { CaptureDate } from './CaptureDate.tsx'
 import { FaceHighlight } from './FaceHighlight.tsx'
 import { PeopleInPhoto } from './PeopleInPhoto.tsx'
 import { PhotoDescription } from './PhotoDescription.tsx'
+import { SharePanel } from './SharePanel.tsx'
 
 type Props = {
   asset: Asset
@@ -361,6 +362,38 @@ function InfoPanel({
       <PeopleInPhoto assetId={asset.id} onNavigate={onClose} onHighlight={onHighlight} />
 
       <PhotoDescription asset={asset} editable={editable} />
+
+      {editable && <ShareThisPhoto assetId={asset.id} />}
     </aside>
+  )
+}
+
+/**
+ * Publishing one photograph, from the panel that already describes it.
+ *
+ * Folded away until asked for: sharing is deliberate, and a live link sitting open
+ * beside the metadata invites the kind of click nobody meant to make.
+ */
+function ShareThisPhoto({ assetId }: { assetId: string }) {
+  const [open, setOpen] = useState(false)
+
+  if (!open) {
+    return (
+      <div className="mt-6 border-t border-white/10 pt-5">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white/80 transition hover:border-white/50 hover:text-white"
+        >
+          Share this photo
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-6 border-t border-white/10 pt-5">
+      <SharePanel target={{ kind: 'photo', id: assetId }} onClose={() => setOpen(false)} />
+    </div>
   )
 }

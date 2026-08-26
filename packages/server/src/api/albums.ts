@@ -220,5 +220,27 @@ export function createAlbumRoutes() {
     },
   )
 
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{id}/share',
+      tags: ['Albums'],
+      summary: 'The public link for this album, if it has one',
+      security: security(),
+      middleware: [requireScope('albums:read')] as const,
+      request: { params: IdParam },
+      responses: { ...ok(ShareLink.nullable(), 'The link, or null'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const link = await services.albums.albumShareLink(
+        c.get('principal').user.id,
+        c.req.valid('param').id,
+        services.config.publicUrl,
+      )
+      return c.json(link, 200)
+    },
+  )
+
   return app
 }
