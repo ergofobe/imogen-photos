@@ -168,7 +168,7 @@ export class AssetService {
   }
 
   async update(ownerId: string, assetId: string, patch: AssetUpdate): Promise<Asset> {
-    await this.get(ownerId, assetId, { includeVaulted: true })
+    const current = await this.get(ownerId, assetId, { includeVaulted: true })
 
     const [row] = await this.db
       .update(assets)
@@ -176,9 +176,7 @@ export class AssetService {
         ...(patch.favorite !== undefined ? { favorite: patch.favorite } : {}),
         ...(patch.archived !== undefined ? { archived: patch.archived } : {}),
         ...(patch.description !== undefined ? { description: patch.description } : {}),
-        ...(patch.capturedAt
-          ? { capturedAt: new Date(patch.capturedAt), capturedAtIsExact: true }
-          : {}),
+        ...capturedAtChange(current, patch),
         ...(patch.location !== undefined
           ? {
               latitude: patch.location?.latitude ?? null,
@@ -270,5 +268,43 @@ export class AssetService {
       earliestCapturedAt: row?.earliest ? new Date(row.earliest).toISOString() : null,
       latestCapturedAt: row?.latest ? new Date(row.latest).toISOString() : null,
     }
+  }
+}
+
+/**
+ * Correcting a capture date without losing the one the photo arrived with.
+ *
+ * Scanned photographs and files stripped of their metadata turn up under the wrong
+ * date, and the only person who knows the right one is the owner. The correction is
+ * recorded against the row alone — the uploaded file is never rewritten, so whatever
+ * the camera wrote stays on disk untouched.
+ *
+ * The first correction tucks the imported date away so it can be put back. Later
+ * corrections leave it alone: what is worth keeping is what the file said, not the
+ * previous guess at fixing it.
+ */
+function capturedAtChange(current: Asset, patch: AssetUpdate) {
+  if (patch.resetCapturedAt) {
+    if (!current.capturedAtOriginal) return {}
+    return {
+      capturedAt: new Date(current.capturedAtOriginal),
+      capturedAtIsExact: current.capturedAtOriginalIsExact ?? false,
+      capturedAtOriginal: null,
+      capturedAtOriginalIsExact: null,
+    }
+  }
+
+  if (!patch.capturedAt) return {}
+
+  return {
+    capturedAt: new Date(patch.capturedAt),
+    // A date the owner typed is as exact as this library gets.
+    capturedAtIsExact: true,
+    ...(current.capturedAtOriginal
+      ? {}
+      : {
+          capturedAtOriginal: new Date(current.capturedAt),
+          capturedAtOriginalIsExact: current.capturedAtIsExact,
+        }),
   }
 }

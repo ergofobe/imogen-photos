@@ -115,6 +115,16 @@ export const assets = pgTable(
     duration: real('duration'),
     capturedAt: timestamp('captured_at', { withTimezone: true }).notNull(),
     capturedAtIsExact: boolean('captured_at_is_exact').notNull().default(false),
+    /**
+     * The capture date before the owner corrected it, so a correction can be undone.
+     *
+     * Null until the first correction. We never rewrite the uploaded file, so the
+     * camera's own EXIF is always intact on disk — but nothing else in the row
+     * remembers the date it gave us once `captured_at` has been written over.
+     */
+    capturedAtOriginal: timestamp('captured_at_original', { withTimezone: true }),
+    /** Whether that imported date was itself exact, so a revert restores the label too. */
+    capturedAtOriginalIsExact: boolean('captured_at_original_is_exact'),
     favorite: boolean('favorite').notNull().default(false),
     archived: boolean('archived').notNull().default(false),
     description: text('description'),

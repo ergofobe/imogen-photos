@@ -17,6 +17,8 @@ export function toAsset(row: AssetRow): Asset {
     duration: row.duration,
     capturedAt: row.capturedAt.toISOString(),
     capturedAtIsExact: row.capturedAtIsExact,
+    capturedAtOriginal: row.capturedAtOriginal?.toISOString() ?? null,
+    capturedAtOriginalIsExact: row.capturedAtOriginalIsExact ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: row.deletedAt?.toISOString() ?? null,

@@ -29,6 +29,13 @@
       "when": 1787769968241,
       "tag": "0003_faces_scanned",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787773341407,
+      "tag": "0004_captured_at_original",
+      "breakpoints": true
     }
   ]
 }

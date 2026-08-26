@@ -388,3 +388,58 @@ describe('statistics', () => {
     expect(stats.earliestCapturedAt).toStartWith('2020-01-01')
   })
 })
+
+describe('correcting the capture date', () => {
+  test('keeps the date the file gave us, so the edit can be undone', async () => {
+    const row = await addAsset({ capturedAt: new Date('2019-07-04T11:22:33Z') })
+
+    const edited = await service.update(ownerId, row.id, {
+      capturedAt: '2019-07-04T15:22:33.000Z',
+    })
+
+    expect(edited.capturedAt).toBe('2019-07-04T15:22:33.000Z')
+    expect(edited.capturedAtOriginal).toBe('2019-07-04T11:22:33.000Z')
+  })
+
+  test('a second edit does not overwrite the original', async () => {
+    const row = await addAsset({ capturedAt: new Date('2019-07-04T11:22:33Z') })
+
+    await service.update(ownerId, row.id, { capturedAt: '2020-01-01T00:00:00.000Z' })
+    const twice = await service.update(ownerId, row.id, { capturedAt: '2021-01-01T00:00:00.000Z' })
+
+    expect(twice.capturedAt).toBe('2021-01-01T00:00:00.000Z')
+    expect(twice.capturedAtOriginal).toBe('2019-07-04T11:22:33.000Z')
+  })
+
+  test('reverting puts the file’s own date back', async () => {
+    const row = await addAsset({ capturedAt: new Date('2019-07-04T11:22:33Z') })
+    await service.update(ownerId, row.id, { capturedAt: '2020-01-01T00:00:00.000Z' })
+
+    const reverted = await service.update(ownerId, row.id, { resetCapturedAt: true })
+
+    expect(reverted.capturedAt).toBe('2019-07-04T11:22:33.000Z')
+    expect(reverted.capturedAtOriginal).toBeNull()
+  })
+
+  test('reverting an estimated date calls it estimated again', async () => {
+    const row = await addAsset({
+      capturedAt: new Date('2019-07-04T11:22:33Z'),
+      capturedAtIsExact: false,
+    })
+
+    const edited = await service.update(ownerId, row.id, {
+      capturedAt: '1998-03-01T00:00:00.000Z',
+    })
+    expect(edited.capturedAtIsExact).toBe(true)
+
+    const reverted = await service.update(ownerId, row.id, { resetCapturedAt: true })
+
+    expect(reverted.capturedAtIsExact).toBe(false)
+  })
+
+  test('an unedited photo reports no original to fall back to', async () => {
+    const row = await addAsset()
+    const edited = await service.update(ownerId, row.id, { favorite: true })
+    expect(edited.capturedAtOriginal).toBeNull()
+  })
+})

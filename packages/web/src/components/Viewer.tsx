@@ -1,6 +1,7 @@
 import type { Asset, DetectedFace } from '@imogen/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { formatAperture, formatBytes, formatExact, formatShutter } from '../lib/format.ts'
+import { formatAperture, formatBytes, formatShutter } from '../lib/format.ts'
+import { CaptureDate } from './CaptureDate.tsx'
 import { FaceHighlight } from './FaceHighlight.tsx'
 import { PeopleInPhoto } from './PeopleInPhoto.tsx'
 import { PhotoDescription } from './PhotoDescription.tsx'
@@ -302,7 +303,6 @@ function InfoPanel({
 }) {
   const exif = asset.exif
   const rows: Array<[string, string]> = [
-    ['Taken', formatExact(asset.capturedAt)],
     ['File', asset.originalFilename],
     ['Size', formatBytes(asset.sizeBytes)],
   ]
@@ -319,9 +319,6 @@ function InfoPanel({
       asset.location.place ??
         `${asset.location.latitude.toFixed(5)}, ${asset.location.longitude.toFixed(5)}`,
     ])
-  }
-  if (!asset.capturedAtIsExact) {
-    rows.push(['Date source', 'Estimated — this file carried no capture time'])
   }
 
   return (
@@ -350,6 +347,7 @@ function InfoPanel({
 
       {/* EXIF is data, so it is set as data: monospaced, aligned, not dressed as prose. */}
       <dl className="space-y-3">
+        <CaptureDate asset={asset} editable={editable} />
         {rows.map(([key, value]) => (
           <div key={key} className="grid grid-cols-[7.5rem_1fr] gap-3">
             <dt className="label-micro pt-0.5 text-white/45">{key}</dt>
