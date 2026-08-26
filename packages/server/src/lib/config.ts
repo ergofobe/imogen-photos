@@ -30,6 +30,7 @@ const EnvSchema = z.object({
 
   IMOGEN_FFMPEG_PATH: z.string().default('ffmpeg'),
   IMOGEN_FFPROBE_PATH: z.string().default('ffprobe'),
+  IMOGEN_HEIF_DEC_PATH: z.string().default('heif-dec'),
   IMOGEN_JOB_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
   IMOGEN_TRASH_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
 })
@@ -57,6 +58,7 @@ export type Config = {
   oidc: OidcConfig | null
   ffmpegPath: string
   ffprobePath: string
+  heifDecPath: string
   jobConcurrency: number
   trashRetentionDays: number
 }
@@ -137,6 +139,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       : null,
     ffmpegPath: e.IMOGEN_FFMPEG_PATH,
     ffprobePath: e.IMOGEN_FFPROBE_PATH,
+    heifDecPath: e.IMOGEN_HEIF_DEC_PATH,
     jobConcurrency: e.IMOGEN_JOB_CONCURRENCY,
     trashRetentionDays: e.IMOGEN_TRASH_RETENTION_DAYS,
   }

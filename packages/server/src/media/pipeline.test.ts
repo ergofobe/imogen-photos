@@ -11,6 +11,7 @@ const storage = new LocalStorage(join(workDir, 'store'))
 const pipeline = new MediaPipeline({
   ffmpegPath: 'ffmpeg',
   ffprobePath: 'ffprobe',
+  heifDecPath: 'heif-dec',
 })
 
 afterAll(() => rmSync(workDir, { recursive: true, force: true }))
@@ -129,6 +130,26 @@ describe('image processing', () => {
     expect(result.type).toBe('image')
     expect(result.width).toBeGreaterThan(0)
     expect(result.thumbnail).not.toBeNull()
+  })
+
+  test('decodes a tiled HEIC at full resolution, not one tile', async () => {
+    // iPhone HEICs are a grid of 512x512 tiles. Some ffmpeg builds return a single tile
+    // instead of the assembled image, which imports a 3000x2000 photo as 512x512 and
+    // looks like a success. The decoded size must match what the file declares.
+    const large = join(workDir, 'tiled.jpg')
+    await makeJpeg(large, 3000, 2000)
+    const tiled = join(workDir, 'tiled.heic')
+    await Bun.$`sips -s format heic ${large} --out ${tiled}`.quiet().nothrow()
+
+    const declared = await sharp(tiled).metadata()
+    const result = await pipeline.process(tiled, {
+      mimeType: 'image/heic',
+      filename: 'IMG_0002.HEIC',
+    })
+
+    expect(result.error).toBeNull()
+    expect(result.width).toBeGreaterThanOrEqual(Math.floor(declared.width! * 0.9))
+    expect(result.height).toBeGreaterThanOrEqual(Math.floor(declared.height! * 0.9))
   })
 
   test('applies EXIF orientation so clients never have to rotate', async () => {

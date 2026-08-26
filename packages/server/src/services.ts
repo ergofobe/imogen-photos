@@ -36,6 +36,7 @@ export function createServices(config: Config, database?: Database): Services {
   const pipeline = new MediaPipeline({
     ffmpegPath: config.ffmpegPath,
     ffprobePath: config.ffprobePath,
+    heifDecPath: config.heifDecPath,
   })
   const queue = new JobQueue(db, { concurrency: config.jobConcurrency })
 

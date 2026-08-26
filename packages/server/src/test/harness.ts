@@ -65,6 +65,7 @@ export function createTestConfig(overrides: Partial<Config> = {}): Config {
     oidc: null,
     ffmpegPath: 'ffmpeg',
     ffprobePath: 'ffprobe',
+    heifDecPath: 'heif-dec',
     jobConcurrency: 1,
     trashRetentionDays: 30,
     ...overrides,

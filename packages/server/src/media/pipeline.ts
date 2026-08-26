@@ -67,6 +67,8 @@ export type ProcessResult = {
 export type PipelineOptions = {
   ffmpegPath: string
   ffprobePath: string
+  /** `heif-dec` from libheif, used for tiled HEIC that ffmpeg mis-decodes. */
+  heifDecPath: string
 }
 
 function emptyResult(type: AssetType, error: string | null = null): ProcessResult {
@@ -126,7 +128,10 @@ export class MediaPipeline {
     // EXIF is independent of decoding, so read it even if the pixels turn out unreadable.
     await this.readExif(path, result)
 
-    const decoded = await decodeImage(path, this.options.ffmpegPath)
+    const decoded = await decodeImage(path, {
+      ffmpegPath: this.options.ffmpegPath,
+      heifDecPath: this.options.heifDecPath,
+    })
     if (!decoded) return { ...result, error: 'Could not decode this image' }
 
     result.width = decoded.width

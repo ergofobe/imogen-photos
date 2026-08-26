@@ -1,3 +1,4 @@
+import { extname } from 'node:path'
 import type { Sharp } from 'sharp'
 import sharp from 'sharp'
 
@@ -5,30 +6,74 @@ export type Decoded = {
   source: Sharp
   width: number
   height: number
-  /** True when ffmpeg had to decode the pixels because sharp could not. */
-  viaFfmpeg: boolean
+  /** Which decoder produced the pixels. Useful when diagnosing a bad import. */
+  via: 'sharp' | 'heif' | 'ffmpeg'
+}
+
+export type DecodeOptions = {
+  ffmpegPath: string
+  /** `heif-dec` from libheif. Handles tiled HEIC that some ffmpeg builds mis-decode. */
+  heifDecPath: string
+}
+
+const HEIF_EXTENSIONS = new Set(['.heic', '.heif', '.hif', '.avci'])
+
+/**
+ * A decode is only acceptable if it produced roughly the pixels the file claims to hold.
+ * iPhone HEICs are stored as a grid of 512×512 tiles, and some ffmpeg builds hand back a
+ * single tile rather than the assembled image — a silent 3000×2000 → 512×512 downgrade
+ * that looks like a successful import until someone opens the photo.
+ */
+function isPlausible(
+  decoded: { width: number; height: number },
+  declared: { width?: number | undefined; height?: number | undefined },
+): boolean {
+  if (!declared.width || !declared.height) return true
+  return decoded.width >= declared.width * 0.9 && decoded.height >= declared.height * 0.9
 }
 
 /**
+ * Produces something sharp can render from, whatever the source format.
+ *
  * sharp's prebuilt binary parses HEIF containers but cannot decode HEVC-coded pixels,
  * which is what every iPhone produces. It reports metadata happily and then fails on
  * `toBuffer()` with "bad seek". RAW files fail earlier, at `metadata()`.
  *
- * So neither a successful `metadata()` call nor a clean open proves the pixels are
- * readable. The only reliable test is to decode a pixel, which is what this does before
- * committing to a source.
+ * So neither readable metadata nor a clean open proves the pixels are readable. Each
+ * candidate decoder is tested by actually decoding, and its output is measured against
+ * the dimensions the file declares.
  */
-export async function decodeImage(path: string, ffmpegPath: string): Promise<Decoded | null> {
+export async function decodeImage(path: string, options: DecodeOptions): Promise<Decoded | null> {
+  // Metadata usually survives even when the pixels cannot be decoded, so it is the
+  // yardstick for judging whether a decode came back complete.
+  const declared = await sharp(path)
+    .metadata()
+    .catch(() => ({}) as { width?: number; height?: number })
+
   const native = await tryNative(path)
-  if (native) return native
+  if (native && isPlausible(native, declared)) return native
 
-  const png = await decodeWithFfmpeg(path, ffmpegPath)
-  if (!png) return null
+  if (HEIF_EXTENSIONS.has(extname(path).toLowerCase())) {
+    const heif = await decodeHeif(path, options.heifDecPath)
+    if (heif && isPlausible(heif, declared)) return heif
+  }
 
-  const source = sharp(png)
+  const png = await decodeWithFfmpeg(path, options.ffmpegPath)
+  if (png) {
+    const fromFfmpeg = await wrap(png, 'ffmpeg')
+    // A correct-but-small image still beats no image, so an implausible decode is used
+    // only once nothing better has worked.
+    if (fromFfmpeg) return fromFfmpeg
+  }
+
+  return native
+}
+
+async function wrap(buffer: Buffer, via: Decoded['via']): Promise<Decoded | null> {
+  const source = sharp(buffer)
   const meta = await source.metadata().catch(() => null)
   if (!meta?.width || !meta.height) return null
-  return { source, width: meta.width, height: meta.height, viaFfmpeg: true }
+  return { source, width: meta.width, height: meta.height, via }
 }
 
 async function tryNative(path: string): Promise<Decoded | null> {
@@ -38,9 +83,27 @@ async function tryNative(path: string): Promise<Decoded | null> {
     if (!meta.width || !meta.height) return null
     // Decode one pixel. Cheap, and it proves the codec is actually available.
     await source.clone().resize(1, 1, { fit: 'fill' }).raw().toBuffer()
-    return { source, width: meta.width, height: meta.height, viaFfmpeg: false }
+    return { source, width: meta.width, height: meta.height, via: 'sharp' }
   } catch {
     return null
+  }
+}
+
+/** libheif's own decoder, which assembles tiled HEIC correctly. */
+async function decodeHeif(path: string, heifDecPath: string): Promise<Decoded | null> {
+  const output = `${path}.decoded.png`
+  try {
+    const proc = Bun.spawn([heifDecPath, path, output], { stdout: 'ignore', stderr: 'ignore' })
+    if ((await proc.exited) !== 0) return null
+    const file = Bun.file(output)
+    if (!(await file.exists())) return null
+    return await wrap(Buffer.from(await file.arrayBuffer()), 'heif')
+  } catch {
+    return null
+  } finally {
+    await Bun.file(output)
+      .delete()
+      .catch(() => {})
   }
 }
 
