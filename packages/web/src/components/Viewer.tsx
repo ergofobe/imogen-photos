@@ -1,6 +1,7 @@
 import type { Asset } from '@imogen/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatAperture, formatBytes, formatExact, formatShutter } from '../lib/format.ts'
+import { PeopleInPhoto } from './PeopleInPhoto.tsx'
 
 type Props = {
   asset: Asset
@@ -322,6 +323,8 @@ function InfoPanel({ asset, onClose }: { asset: Asset; onClose: () => void }) {
           </div>
         ))}
       </dl>
+
+      <PeopleInPhoto assetId={asset.id} onNavigate={onClose} />
 
       {asset.description && (
         <p className="mt-6 border-t border-white/10 pt-5 text-sm leading-relaxed text-white/80">

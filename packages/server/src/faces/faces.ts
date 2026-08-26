@@ -16,6 +16,7 @@ export type DetectedFace = {
   id: string
   assetId: string
   personId: string | null
+  personName: string | null
   x: number
   y: number
   width: number
@@ -355,15 +356,26 @@ export class FaceService {
     return rows.map((r) => r.asset)
   }
 
+  /**
+   * The faces in one photo, with whoever they belong to.
+   *
+   * Hidden people are still reported here: someone looking at a photograph should be
+   * told who is in it, even if they have chosen not to see that person in the People
+   * list. Hiding is about the index, not about concealing a photo's own contents.
+   */
   async facesForAsset(ownerId: string, assetId: string): Promise<DetectedFace[]> {
     const rows = await this.db
-      .select()
+      .select({ face: faces, personName: people.name })
       .from(faces)
+      .leftJoin(people, eq(people.id, faces.personId))
       .where(and(eq(faces.assetId, assetId), eq(faces.ownerId, ownerId)))
-    return rows.map((f) => ({
+      .orderBy(desc(faces.score))
+
+    return rows.map(({ face: f, personName }) => ({
       id: f.id,
       assetId: f.assetId,
       personId: f.personId,
+      personName: personName ?? null,
       x: f.x,
       y: f.y,
       width: f.width,

@@ -208,6 +208,37 @@ describe.skipIf(!canRun)('working with people', () => {
     expect(response.headers.get('content-type')).toBe('image/webp')
   })
 
+  test('the faces in a photo come back with who they are', async () => {
+    const { cookie, people } = await libraryOfThree()
+    await json(`/api/v1/people/${people[0]!.id}`, 'PATCH', { name: 'Anna' }, cookie)
+
+    const person = (await (
+      await request(`/api/v1/people/${people[0]!.id}`, { headers: { Cookie: cookie } })
+    ).json()) as { photos: Array<{ id: string }> }
+
+    const faces = (await (
+      await request(`/api/v1/people/faces/${person.photos[0]!.id}`, { headers: { Cookie: cookie } })
+    ).json()) as { items: Array<{ personId: string; personName: string | null }> }
+
+    expect(faces.items).toHaveLength(1)
+    expect(faces.items[0]!.personName).toBe('Anna')
+    expect(faces.items[0]!.personId).toBe(people[0]!.id)
+  })
+
+  test('an unnamed person is reported as unnamed rather than omitted', async () => {
+    const { cookie, people } = await libraryOfThree()
+    const person = (await (
+      await request(`/api/v1/people/${people[0]!.id}`, { headers: { Cookie: cookie } })
+    ).json()) as { photos: Array<{ id: string }> }
+
+    const faces = (await (
+      await request(`/api/v1/people/faces/${person.photos[0]!.id}`, { headers: { Cookie: cookie } })
+    ).json()) as { items: Array<{ personId: string | null; personName: string | null }> }
+
+    expect(faces.items[0]!.personName).toBeNull()
+    expect(faces.items[0]!.personId).not.toBeNull()
+  })
+
   test('another account cannot see them', async () => {
     const { people } = await libraryOfThree()
     const intruder = await json('/api/v1/auth/signup', 'POST', {

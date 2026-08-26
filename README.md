@@ -260,13 +260,21 @@ The design document is in [`docs/superpowers/specs`](docs/superpowers/specs/).
 
 ## Not there yet
 
-Face recognition and semantic search are not implemented. The schema reserves a vector
-column and the search index is already in place, so they can arrive without a migration,
-but today search covers filenames, descriptions, places, and camera metadata.
+Semantic search — finding a photo by describing it — is not implemented. The schema
+reserves a vector column on assets and the search index is in place, so it can arrive
+without a migration, but today search covers filenames, descriptions, places, camera
+metadata, and the people you have named.
 
 Also absent: reverse geocoding (coordinates are shown as coordinates), video
 transcoding, and S3 storage. The storage driver is an interface, so S3 is a contained
 change when someone wants it.
+
+Face grouping works but has rough edges worth knowing about. It reads frontal, reasonably
+lit faces well; profiles, sunglasses, motion blur, and young children — whose faces change
+faster than a stored average can follow — are where it will disappoint you. It errs toward
+splitting one person across two groups rather than merging two people, on the grounds that
+the first is a click to fix and the second files somebody's photographs under another
+person's name.
 
 ## Licence
 
