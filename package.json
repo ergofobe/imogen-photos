@@ -1,0 +1,28 @@
+{
+  "name": "imogen-photos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "scripts": {
+    "dev": "bun run --filter '@imogen/server' dev",
+    "dev:web": "bun run --filter '@imogen/web' dev",
+    "build": "bun run --filter '*' build",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "db:generate": "bun run --filter '@imogen/server' db:generate",
+    "db:migrate": "bun run --filter '@imogen/server' db:migrate"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.0",
+    "@types/bun": "^1.2.20",
+    "typescript": "^5.9.2"
+  }
+}

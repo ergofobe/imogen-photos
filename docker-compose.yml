@@ -1,0 +1,48 @@
+services:
+  imogen:
+    build: .
+    image: ghcr.io/ergofobe/imogen-photos:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '${IMOGEN_PORT:-3000}:3000'
+    environment:
+      DATABASE_URL: postgres://imogen:${POSTGRES_PASSWORD:-imogen}@db:5432/imogen
+      IMOGEN_DATA_DIR: /data
+      IMOGEN_PUBLIC_URL: ${IMOGEN_PUBLIC_URL:-http://localhost:3000}
+      IMOGEN_SECRET: ${IMOGEN_SECRET:-}
+      IMOGEN_ALLOW_SIGNUP: ${IMOGEN_ALLOW_SIGNUP:-true}
+      IMOGEN_OIDC_ISSUER: ${IMOGEN_OIDC_ISSUER:-}
+      IMOGEN_OIDC_CLIENT_ID: ${IMOGEN_OIDC_CLIENT_ID:-}
+      IMOGEN_OIDC_CLIENT_SECRET: ${IMOGEN_OIDC_CLIENT_SECRET:-}
+      IMOGEN_OIDC_ADMIN_VALUE: ${IMOGEN_OIDC_ADMIN_VALUE:-}
+      IMOGEN_OIDC_LABEL: ${IMOGEN_OIDC_LABEL:-Single sign-on}
+    volumes:
+      - imogen-data:/data
+    healthcheck:
+      test: ['CMD', 'bun', '--eval', 'await fetch("http://127.0.0.1:3000/api/v1/health").then(r=>r.ok?0:process.exit(1))']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: imogen
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-imogen}
+      POSTGRES_DB: imogen
+    volumes:
+      - imogen-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U imogen -d imogen']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  imogen-data:
+  imogen-db:
