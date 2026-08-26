@@ -55,7 +55,7 @@ CREATE TABLE "assets" (
 	"live_photo_video_id" uuid,
 	"device_asset_id" text,
 	"embedding" vector(512),
-	"search_vector" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('simple', coalesce(original_filename, '')), 'A') ||
+	"search_vector" "tsvector" GENERATED ALWAYS AS (setweight(to_tsvector('simple', translate(coalesce(original_filename, ''), '._-/\', '     ')), 'A') ||
           setweight(to_tsvector('english', coalesce(description, '')), 'A') ||
           setweight(to_tsvector('simple', coalesce(place, '')), 'B') ||
           setweight(to_tsvector('simple', coalesce(exif->>'make', '') || ' ' || coalesce(exif->>'model', '')), 'C')) STORED,
@@ -87,6 +87,7 @@ CREATE TABLE "oauth_auth_codes" (
 	"scopes" jsonb NOT NULL,
 	"code_challenge" text NOT NULL,
 	"code_challenge_method" text NOT NULL,
+	"family_id" uuid NOT NULL,
 	"consumed_at" timestamp with time zone,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL

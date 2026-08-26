@@ -6,7 +6,6 @@ import {
   doublePrecision,
   index,
   integer,
-  jsonb,
   pgTable,
   primaryKey,
   real,
@@ -21,6 +20,20 @@ import {
 const tsvector = customType<{ data: string; driverData: string }>({
   dataType: () => 'tsvector',
 })
+
+/**
+ * Bun's SQL driver already serializes objects bound to a json/jsonb parameter. Drizzle's
+ * built-in `jsonb` stringifies first, so the value lands as a JSON *string* containing
+ * JSON: `jsonb_typeof` reports "string" and `->>` returns null. It round-trips through
+ * Drizzle because the decode is symmetric, which hides the damage from tests that only
+ * read back through the ORM — but the generated search vector and every external reader
+ * see the wrong thing. Passing the value through untouched is the fix.
+ */
+const json = <T>(name: string) =>
+  customType<{ data: T; driverData: T }>({
+    dataType: () => 'jsonb',
+    toDriver: (value: T) => value,
+  })(name)
 
 const createdAt = timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 const updatedAt = timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
@@ -97,7 +110,7 @@ export const assets = pgTable(
     favorite: boolean('favorite').notNull().default(false),
     archived: boolean('archived').notNull().default(false),
     description: text('description'),
-    exif: jsonb('exif'),
+    exif: json<Record<string, unknown>>('exif'),
     latitude: doublePrecision('latitude'),
     longitude: doublePrecision('longitude'),
     altitude: doublePrecision('altitude'),
@@ -112,7 +125,10 @@ export const assets = pgTable(
      * Weights put the filename and description above camera and place.
      */
     searchVector: tsvector('search_vector').generatedAlwaysAs(
-      sql`setweight(to_tsvector('simple', coalesce(original_filename, '')), 'A') ||
+      // Postgres indexes "harbour-sunset.jpg" as a single `file` token, so searching for
+      // "harbour" would miss it. Replacing punctuation with spaces first makes every part
+      // of a filename findable, which is how people actually search for their photos.
+      sql`setweight(to_tsvector('simple', translate(coalesce(original_filename, ''), '._-/\\', '     ')), 'A') ||
           setweight(to_tsvector('english', coalesce(description, '')), 'A') ||
           setweight(to_tsvector('simple', coalesce(place, '')), 'B') ||
           setweight(to_tsvector('simple', coalesce(exif->>'make', '') || ' ' || coalesce(exif->>'model', '')), 'C')`,
@@ -226,9 +242,9 @@ export const oauthClients = pgTable(
     /** Null for public clients (PKCE only), which is what native apps and MCP use. */
     secretHash: text('secret_hash'),
     name: text('name').notNull(),
-    redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
-    grantTypes: jsonb('grant_types').$type<string[]>().notNull(),
-    scopes: jsonb('scopes').$type<string[]>().notNull(),
+    redirectUris: json<string[]>('redirect_uris').notNull(),
+    grantTypes: json<string[]>('grant_types').notNull(),
+    scopes: json<string[]>('scopes').notNull(),
     tokenEndpointAuthMethod: text('token_endpoint_auth_method').notNull().default('none'),
     clientUri: text('client_uri'),
     logoUri: text('logo_uri'),
@@ -251,9 +267,11 @@ export const oauthAuthCodes = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     redirectUri: text('redirect_uri').notNull(),
-    scopes: jsonb('scopes').$type<string[]>().notNull(),
+    scopes: json<string[]>('scopes').notNull(),
     codeChallenge: text('code_challenge').notNull(),
     codeChallengeMethod: text('code_challenge_method').notNull(),
+    /** Ties this code to the token family it mints, so a replay can revoke exactly those. */
+    familyId: uuid('family_id').notNull(),
     /** Set when redeemed, so a replayed code is detectable rather than merely expired. */
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -274,7 +292,7 @@ export const oauthTokens = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    scopes: jsonb('scopes').$type<string[]>().notNull(),
+    scopes: json<string[]>('scopes').notNull(),
     /**
      * Rotation lineage. Presenting an already-rotated refresh token revokes the whole
      * family, which is how a stolen token stops being useful.
@@ -307,7 +325,7 @@ export const uploadSessions = pgTable(
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     receivedBytes: bigint('received_bytes', { mode: 'number' }).notNull().default(0),
     tempPath: text('temp_path').notNull(),
-    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    metadata: json<Record<string, unknown>>('metadata'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt,
@@ -323,7 +341,7 @@ export const jobs = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
-    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    payload: json<Record<string, unknown>>('payload').notNull(),
     status: text('status', { enum: ['queued', 'running', 'done', 'failed'] })
       .notNull()
       .default('queued'),
@@ -341,7 +359,7 @@ export const jobs = pgTable(
 
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),
-  value: jsonb('value').notNull(),
+  value: json<unknown>('value').notNull(),
   updatedAt,
 })
 

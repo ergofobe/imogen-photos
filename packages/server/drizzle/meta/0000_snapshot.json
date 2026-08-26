@@ -1,5 +1,5 @@
 {
-  "id": "30e244de-f3ca-4f25-82aa-fb04f209ac7e",
+  "id": "8430dca9-4df2-4441-a7ec-63d182956ebd",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -498,7 +498,7 @@
           "primaryKey": false,
           "notNull": false,
           "generated": {
-            "as": "setweight(to_tsvector('simple', coalesce(original_filename, '')), 'A') ||\n          setweight(to_tsvector('english', coalesce(description, '')), 'A') ||\n          setweight(to_tsvector('simple', coalesce(place, '')), 'B') ||\n          setweight(to_tsvector('simple', coalesce(exif->>'make', '') || ' ' || coalesce(exif->>'model', '')), 'C')",
+            "as": "setweight(to_tsvector('simple', translate(coalesce(original_filename, ''), '._-/\\', '     ')), 'A') ||\n          setweight(to_tsvector('english', coalesce(description, '')), 'A') ||\n          setweight(to_tsvector('simple', coalesce(place, '')), 'B') ||\n          setweight(to_tsvector('simple', coalesce(exif->>'make', '') || ' ' || coalesce(exif->>'model', '')), 'C')",
             "type": "stored"
           }
         },
@@ -854,6 +854,12 @@
         "code_challenge_method": {
           "name": "code_challenge_method",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
