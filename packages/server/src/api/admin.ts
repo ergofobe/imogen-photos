@@ -7,6 +7,7 @@ import {
   Invite,
   InviteCreate,
   InviteCreated,
+  QueueHealth,
 } from '@imogen/shared'
 import { type AppEnv, requireHiddenAdmin } from '../auth/middleware.ts'
 import { created, ERROR_RESPONSES, NO_CONTENT, ok, security } from './openapi.ts'
@@ -150,6 +151,65 @@ export function createAdminRoutes() {
     }),
     async (c) => {
       await c.get('services').admin.revokeInvite(c.req.valid('param').id)
+      return c.body(null, 204)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/queue',
+      tags: ['Admin'],
+      summary: 'What the background pipeline is doing',
+      security: security(),
+      responses: { ...ok(QueueHealth, 'The state of the queue'), ...ERROR_RESPONSES },
+    }),
+    async (c) => c.json(await c.get('services').admin.queueHealth(), 200),
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/queue/retry',
+      tags: ['Admin'],
+      summary: 'Put every failed job back in the queue',
+      security: security(),
+      responses: { ...ok(z.object({ count: z.number().int() }), 'How many'), ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      const count = await c.get('services').admin.retryJobs()
+      return c.json({ count }, 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/queue/{id}/retry',
+      tags: ['Admin'],
+      summary: 'Put one job back in the queue',
+      security: security(),
+      request: { params: IdParam },
+      responses: { ...NO_CONTENT, ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      await c.get('services').admin.retryJobs(c.req.valid('param').id)
+      return c.body(null, 204)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/queue/{id}',
+      tags: ['Admin'],
+      summary: 'Discard a job that is never going to work',
+      security: security(),
+      request: { params: IdParam },
+      responses: { ...NO_CONTENT, ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      await c.get('services').admin.discardJob(c.req.valid('param').id)
       return c.body(null, 204)
     },
   )

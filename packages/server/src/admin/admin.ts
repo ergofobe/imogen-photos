@@ -4,10 +4,11 @@ import type {
   Invite,
   InviteCreate,
   InviteCreated,
+  QueueHealth,
 } from '@imogen/shared'
-import { and, count, desc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNull, min, ne, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
-import { assets, invites, sessions, users } from '../db/schema.ts'
+import { assets, invites, jobs, sessions, users } from '../db/schema.ts'
 import { conflict, notFound } from '../lib/errors.ts'
 import { generateToken, hashToken } from '../lib/tokens.ts'
 
@@ -171,6 +172,89 @@ export class AdminService {
       .where(eq(invites.id, id))
       .returning({ id: invites.id })
     if (rows.length === 0) throw notFound('No such invitation')
+  }
+
+  /**
+   * What the background pipeline is doing, and what it gave up on.
+   *
+   * `stuck` is counted from the assets rather than the queue on purpose: a job row can
+   * be pruned, or never have been enqueued at all, and the photograph would still be
+   * sitting in the library saying "processing" with nothing to explain it.
+   */
+  async queueHealth(failureLimit = 50): Promise<QueueHealth> {
+    const counts = await this.db
+      .select({ status: jobs.status, n: count() })
+      .from(jobs)
+      .groupBy(jobs.status)
+    const byStatus = new Map(counts.map((row) => [row.status, Number(row.n)]))
+
+    const [waiting] = await this.db
+      .select({ oldest: min(jobs.runAt) })
+      .from(jobs)
+      .where(eq(jobs.status, 'queued'))
+
+    const [stalled] = await this.db
+      .select({ n: count() })
+      .from(assets)
+      .where(and(inArray(assets.status, ['pending', 'processing']), isNull(assets.deletedAt)))
+
+    const failures = await this.db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.status, 'failed'))
+      .orderBy(desc(jobs.createdAt))
+      .limit(failureLimit)
+
+    return {
+      queued: byStatus.get('queued') ?? 0,
+      running: byStatus.get('running') ?? 0,
+      failed: byStatus.get('failed') ?? 0,
+      stuck: Number(stalled?.n ?? 0),
+      oldestQueuedAt: waiting?.oldest ? new Date(waiting.oldest).toISOString() : null,
+      failures: failures.map((job) => ({
+        id: job.id,
+        name: job.name,
+        status: job.status,
+        attempts: job.attempts,
+        maxAttempts: job.maxAttempts,
+        lastError: job.lastError,
+        runAt: job.runAt.toISOString(),
+        createdAt: job.createdAt.toISOString(),
+        finishedAt: job.finishedAt?.toISOString() ?? null,
+      })),
+    }
+  }
+
+  /**
+   * Puts failed work back in the queue.
+   *
+   * Attempts go back to zero. A job that failed its way to the limit would otherwise
+   * be claimed and abandoned again on the first error, which looks like the retry
+   * silently doing nothing. Postgres stamps `run_at`, because the application clock
+   * can sit a shade ahead of the database and work scheduled in its future is
+   * invisible to a query asking for work whose time has come.
+   */
+  async retryJobs(id?: string): Promise<number> {
+    const rows = await this.db
+      .update(jobs)
+      .set({
+        status: 'queued',
+        attempts: 0,
+        lastError: null,
+        startedAt: null,
+        finishedAt: null,
+        runAt: sql`now()`,
+      })
+      .where(id ? eq(jobs.id, id) : eq(jobs.status, 'failed'))
+      .returning({ id: jobs.id })
+
+    if (id && rows.length === 0) throw notFound('No such job')
+    return rows.length
+  }
+
+  async discardJob(id: string): Promise<void> {
+    const rows = await this.db.delete(jobs).where(eq(jobs.id, id)).returning({ id: jobs.id })
+    if (rows.length === 0) throw notFound('No such job')
   }
 
   private async requireUser(userId: string) {

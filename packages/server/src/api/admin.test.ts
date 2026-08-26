@@ -435,3 +435,91 @@ describe('deleting an account', () => {
     expect(response.status).toBe(409)
   })
 })
+
+describe('the work queue', () => {
+  const addJob = (status: string, error: string | null = null, attempts = 0) =>
+    harness.db.execute(
+      sql`insert into jobs (name, payload, status, attempts, max_attempts, last_error)
+          values ('media.process', '{}'::jsonb, ${status}, ${attempts}, 5, ${error})
+          returning id`,
+    )
+
+  test('reports what is waiting, running and broken', async () => {
+    const admin = await signUp('first@example.com')
+    await addJob('queued')
+    await addJob('queued')
+    await addJob('running')
+    await addJob('failed', 'ffmpeg fell over')
+
+    const response = await request('/api/v1/admin/queue', { headers: { Cookie: admin.cookie } })
+    const body = (await response.json()) as {
+      queued: number
+      running: number
+      failed: number
+      failures: Array<{ lastError: string | null }>
+    }
+
+    expect(body.queued).toBe(2)
+    expect(body.running).toBe(1)
+    expect(body.failed).toBe(1)
+    expect(body.failures[0]?.lastError).toBe('ffmpeg fell over')
+  })
+
+  test('retrying puts a failure back in the queue with its attempts cleared', async () => {
+    const admin = await signUp('first@example.com')
+    const rows = await addJob('failed', 'ffmpeg fell over', 5)
+    const id = (rows[0] as { id: string }).id
+
+    const response = await asAdmin(`/api/v1/admin/queue/${id}/retry`, 'POST', {}, admin.cookie)
+    expect(response.status).toBe(204)
+
+    const after = await harness.db.execute(
+      sql`select status, attempts, last_error from jobs where id = ${id}`,
+    )
+    const job = after[0] as { status: string; attempts: number; last_error: string | null }
+    expect(job.status).toBe('queued')
+    // Left at the limit it would be picked up and abandoned again on the first error.
+    expect(job.attempts).toBe(0)
+  })
+
+  test('retrying everything picks up only the failures', async () => {
+    const admin = await signUp('first@example.com')
+    await addJob('failed', 'one')
+    await addJob('failed', 'two')
+    await addJob('done')
+
+    await asAdmin('/api/v1/admin/queue/retry', 'POST', {}, admin.cookie)
+
+    const rows = await harness.db.execute(
+      sql`select status, count(*)::int as n from jobs group by status`,
+    )
+    const byStatus = Object.fromEntries(
+      (rows as Array<{ status: string; n: number }>).map((r) => [r.status, r.n]),
+    )
+    expect(byStatus.queued).toBe(2)
+    expect(byStatus.done).toBe(1)
+    expect(byStatus.failed).toBeUndefined()
+  })
+
+  test('discarding a failure removes it', async () => {
+    const admin = await signUp('first@example.com')
+    const rows = await addJob('failed', 'hopeless')
+    const id = (rows[0] as { id: string }).id
+
+    await asAdmin(`/api/v1/admin/queue/${id}`, 'DELETE', undefined, admin.cookie)
+
+    const after = await harness.db.execute(
+      sql`select count(*)::int as n from jobs where id = ${id}`,
+    )
+    expect((after[0] as { n: number }).n).toBe(0)
+  })
+
+  test('the queue is not readable by an ordinary account', async () => {
+    await signUp('first@example.com')
+    const { cookie } = await signUp('second@example.com')
+
+    const response = await request('/api/v1/admin/queue', { headers: { Cookie: cookie } })
+
+    expect(response.status).toBe(404)
+  })
+})
