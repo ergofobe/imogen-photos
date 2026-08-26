@@ -52,7 +52,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            ffmpeg libheif-examples libimage-exiftool-perl libheif-plugin-x265
+            ffmpeg libheif-examples libimage-exiftool-perl \
+            libheif-plugin-x265 libheif-plugin-libde265
 
       - run: bun install --frozen-lockfile
 

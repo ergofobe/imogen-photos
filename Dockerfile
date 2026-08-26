@@ -30,7 +30,8 @@ WORKDIR /app
 #
 # ffmpeg covers everything else: camera RAW, exotic containers, and video poster frames.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg libheif-examples ca-certificates \
+  && apt-get install -y --no-install-recommends \
+     ffmpeg libheif-examples libheif-plugin-libde265 ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production \

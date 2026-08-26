@@ -89,16 +89,33 @@ async function tryNative(path: string): Promise<Decoded | null> {
   }
 }
 
-/** libheif's own decoder, which assembles tiled HEIC correctly. */
-async function decodeHeif(path: string, heifDecPath: string): Promise<Decoded | null> {
+/**
+ * libheif's own decoder, which assembles tiled HEIC correctly where ffmpeg may return a
+ * single tile.
+ *
+ * The binary was renamed: libheif 1.18 and later ship `heif-dec`, earlier versions ship
+ * `heif-convert`, and distributions are split across both. Trying each in turn costs one
+ * failed spawn and saves every photo on the older ones.
+ */
+async function decodeHeif(path: string, configuredPath: string): Promise<Decoded | null> {
+  const candidates = [...new Set([configuredPath, 'heif-dec', 'heif-convert'])]
+  for (const binary of candidates) {
+    const decoded = await runHeifDecoder(binary, path)
+    if (decoded) return decoded
+  }
+  return null
+}
+
+async function runHeifDecoder(binary: string, path: string): Promise<Decoded | null> {
   const output = `${path}.decoded.png`
   try {
-    const proc = Bun.spawn([heifDecPath, path, output], { stdout: 'ignore', stderr: 'ignore' })
+    const proc = Bun.spawn([binary, path, output], { stdout: 'ignore', stderr: 'ignore' })
     if ((await proc.exited) !== 0) return null
     const file = Bun.file(output)
     if (!(await file.exists())) return null
     return await wrap(Buffer.from(await file.arrayBuffer()), 'heif')
   } catch {
+    // The binary is not installed on this machine; the caller tries the next one.
     return null
   } finally {
     await Bun.file(output)
