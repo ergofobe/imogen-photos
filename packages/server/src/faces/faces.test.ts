@@ -111,6 +111,36 @@ describe.skipIf(!canRun)('detecting faces', () => {
     expect(face!.score).toBeGreaterThan(0.65)
   })
 
+  test('a photo with no faces is not scanned again on the next pass', async () => {
+    counter++
+    const relative = `${ownerId}/empty.png`
+    await mkdir(join(config.libraryDir, ownerId), { recursive: true })
+    await sharp({
+      create: { width: 600, height: 400, channels: 3, background: { r: 30, g: 80, b: 50 } },
+    })
+      .png()
+      .toFile(join(config.libraryDir, relative))
+    const [asset] = await db
+      .insert(assets)
+      .values({
+        ownerId,
+        type: 'image',
+        status: 'ready',
+        originalFilename: 'empty.png',
+        mimeType: 'image/png',
+        checksum: 'e'.repeat(64),
+        sizeBytes: 10,
+        originalPath: relative,
+        capturedAt: new Date(),
+      })
+      .returning()
+
+    await service.processAsset(asset!.id)
+
+    const [after] = await db.select().from(assets).where(eq(assets.id, asset!.id))
+    expect(after!.facesScannedAt).not.toBeNull()
+  })
+
   test('finds nothing in a photograph with no people in it', async () => {
     counter++
     const relative = `${ownerId}/landscape.png`
@@ -191,6 +221,48 @@ describe.skipIf(!canRun)('grouping faces into people', () => {
     expect(found.length).toBeGreaterThanOrEqual(3)
     // Nobody should have collected faces belonging to two different sitters.
     expect(found.every((p) => p.faceCount <= 2)).toBe(true)
+  })
+
+  /**
+   * The job queue scans several photos at once. Before the assignment was serialised,
+   * four workers each looked for an existing person, each found none yet, and each
+   * created one — so three photographs of one face became three different people.
+   */
+  test('stays one person when several photos are scanned at the same time', async () => {
+    // Added one at a time, then scanned all at once — the race is in the scanning.
+    const shots = [
+      await addPhoto('person-a.png'),
+      await addPhoto('person-a.png', (i) => i.modulate({ brightness: 1.2 })),
+      await addPhoto('person-a.png', (i) => i.modulate({ brightness: 0.8 })),
+      await addPhoto('person-a.png', (i) => i.rotate(6, { background: '#fff' })),
+    ]
+
+    await Promise.all(shots.map((asset) => service.processAsset(asset.id)))
+
+    const found = await service.listPeople(ownerId)
+    expect(found).toHaveLength(1)
+    expect(found[0]!.faceCount).toBe(4)
+  })
+
+  /**
+   * The housekeeping pass removes people who have no visible photos. Before assignment
+   * and storage were atomic, it could remove a person in the moment between their being
+   * created and their first face being written — leaving that face attached to nobody.
+   */
+  test('every stored face belongs to somebody', async () => {
+    const shots = [
+      await addPhoto('person-a.png'),
+      await addPhoto('person-b.png'),
+      await addPhoto('person-c.png'),
+      await addPhoto('person-a.png', (i) => i.modulate({ brightness: 1.2 })),
+      await addPhoto('person-b.png', (i) => i.modulate({ brightness: 0.8 })),
+    ]
+
+    await Promise.all(shots.map((asset) => service.processAsset(asset.id)))
+
+    const stored = await db.select().from(faces)
+    expect(stored.length).toBeGreaterThan(0)
+    expect(stored.every((f) => f.personId !== null)).toBe(true)
   })
 
   test('lists the photos a person appears in', async () => {

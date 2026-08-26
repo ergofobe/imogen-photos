@@ -143,6 +143,12 @@ export const assets = pgTable(
     ),
     /** Non-null means the asset lives in the vault and is hidden from everything else. */
     vaultedAt: timestamp('vaulted_at', { withTimezone: true }),
+    /**
+     * When this photo was last looked at for faces. Recorded whether or not any were
+     * found, because "has no faces row" would otherwise mean "never scanned" forever
+     * for every landscape in the library.
+     */
+    facesScannedAt: timestamp('faces_scanned_at', { withTimezone: true }),
     processingError: text('processing_error'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt,
@@ -162,6 +168,11 @@ export const assets = pgTable(
       .on(t.ownerId, t.capturedAt.desc(), t.id.desc())
       .where(sql`${t.vaultedAt} is not null`),
     index('assets_owner_status_idx').on(t.ownerId, t.status),
+    index('assets_faces_pending_idx')
+      .on(t.ownerId)
+      .where(
+        sql`${t.facesScannedAt} is null and ${t.deletedAt} is null and ${t.vaultedAt} is null`,
+      ),
     index('assets_deleted_at_idx').on(t.deletedAt).where(sql`${t.deletedAt} is not null`),
     index('assets_search_idx').using('gin', t.searchVector),
     index('assets_location_idx')

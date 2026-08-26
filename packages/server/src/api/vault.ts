@@ -3,6 +3,7 @@ import { Asset, pageOf } from '@imogen/shared'
 import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { type AppEnv, requireAuth } from '../auth/middleware.ts'
+import { FACE_DETECT_JOB } from '../jobs/faces.ts'
 import { forbidden } from '../lib/errors.ts'
 import type { Services } from '../services.ts'
 import { asHttpError } from '../vault/vault.ts'
@@ -192,10 +193,13 @@ export function createVaultRoutes() {
     }),
     async (c) => {
       const services = c.get('services')
-      const moved = await services.vault.moveIn(
-        c.get('principal').user.id,
-        c.req.valid('json').assetIds,
-      )
+      const ownerId = c.get('principal').user.id
+      const assetIds = c.req.valid('json').assetIds
+      const moved = await services.vault.moveIn(ownerId, assetIds)
+
+      // Faces found in a vaulted photo stop existing. Leaving them would let a vaulted
+      // photo keep contributing to a named person's thumbnail and count.
+      for (const assetId of assetIds) await services.faces.forgetAsset(assetId, ownerId)
       return c.json({ moved }, 200)
     },
   )
@@ -215,10 +219,16 @@ export function createVaultRoutes() {
     }),
     async (c) => {
       const services = c.get('services')
-      const moved = await services.vault.moveOut(
-        c.get('principal').user.id,
-        c.req.valid('json').assetIds,
-      )
+      const ownerId = c.get('principal').user.id
+      const assetIds = c.req.valid('json').assetIds
+      const moved = await services.vault.moveOut(ownerId, assetIds)
+
+      // Out of the vault, a photo rejoins the library and is scanned again.
+      if (await services.faces.isEnabled()) {
+        for (const assetId of assetIds) {
+          await services.queue.enqueue(FACE_DETECT_JOB, { assetId })
+        }
+      }
       return c.json({ moved }, 200)
     },
   )

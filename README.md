@@ -16,6 +16,7 @@ your AI assistants can search the library too.
   Keycloak, Google, or anything else that speaks OIDC
 - **Built to be built on** — OpenAPI, an SDK, and an OAuth 2.1 server, so a third-party
   app is a first-class citizen rather than an afterthought
+- **People** — optional face grouping, running entirely on your own server
 - **A vault** — photos that need a passphrase to see, hidden from everything else
 - **Agent-ready** — connect Claude or Grok to your library with a URL
 
@@ -89,6 +90,29 @@ photos.example.com {
 
 ---
 
+## People
+
+imogen can find faces and group the photos each person appears in, so you can name
+someone once and then browse everything they are in. Detection and recognition run on
+your server; no photograph is sent anywhere.
+
+It is **off until you turn it on**, from the People page. Enabling it downloads about
+190 MB of recognition models and scans your existing library in the background.
+
+- Photos in your vault are never scanned, and vaulting a photo forgets the faces already
+  found in it.
+- Nobody is named until you name them. Unnamed groups are shown so you can name them,
+  and either can be hidden.
+- Grouping errs toward splitting a person across two groups rather than merging two
+  people into one. Select several and tell it they are the same person.
+
+**A note on the models.** imogen uses InsightFace's SCRFD and ArcFace, which are licensed
+for non-commercial research use. imogen ships no models: your server downloads them when
+you enable the feature, so the licence decision stays with you. If that does not suit
+your situation, leave the feature off.
+
+---
+
 ## The vault
 
 Some photographs should not be one careless scroll away. Move them to the vault and they
@@ -141,9 +165,11 @@ imogen-mcp login --server https://photos.example.com
 | `search_photos` · `get_photo` · `get_photo_image` · `get_library_stats` | `library:read` |
 | `list_albums` · `get_album` | `albums:read` |
 | `create_album` · `add_to_album` | `albums:write` |
+| `search_by_person` · `list_people` | `library:read` |
 
 Every tool is scoped to the connected account. There is no tool that deletes anything, and
-nothing in the vault is visible to any of them.
+nothing in the vault is visible to any of them. Only people you have named are findable —
+unnamed groupings and hidden people are not.
 
 ---
 

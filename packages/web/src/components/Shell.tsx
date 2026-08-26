@@ -15,6 +15,11 @@ const NAV = [
     icon: 'M12 20.3 4.6 13a4.6 4.6 0 0 1 6.5-6.5l.9.9.9-.9A4.6 4.6 0 0 1 19.4 13Z',
   },
   { to: '/albums', label: 'Albums', icon: 'M4 8h7l2 2h7v9H4zM7 8V5h6v3' },
+  {
+    to: '/people',
+    label: 'People',
+    icon: 'M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM5 20a7 7 0 0 1 14 0',
+  },
   { to: '/trash', label: 'Trash', icon: 'M5 7h14M9 7V5h6v2M7 7l1 12h8l1-12' },
 ]
 

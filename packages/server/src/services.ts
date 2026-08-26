@@ -5,6 +5,7 @@ import { SessionService } from './auth/sessions.ts'
 import { createDatabase, type Database } from './db/index.ts'
 import { FaceService } from './faces/faces.ts'
 import { ModelStore } from './faces/models.ts'
+import { FACE_DETECT_JOB, registerFaceJobs } from './jobs/faces.ts'
 import { registerMaintenanceJobs } from './jobs/maintenance.ts'
 import { JobQueue } from './jobs/queue.ts'
 import type { Config } from './lib/config.ts'
@@ -66,8 +67,12 @@ export function createServices(config: Config, database?: Database): Services {
     const assetId = payload.assetId
     if (typeof assetId !== 'string') throw new Error('ingest job needs an assetId')
     await ingest.process(assetId)
+    // Faces are found after the photo is otherwise ready, so a slow scan never holds
+    // up the thumbnail appearing in the timeline.
+    if (await faces.isEnabled()) await queue.enqueue(FACE_DETECT_JOB, { assetId })
   })
   registerMaintenanceJobs(queue, { db, config, library, thumbnails, sessions })
+  registerFaceJobs(queue, { db, faces, models, queue })
 
   return {
     config,

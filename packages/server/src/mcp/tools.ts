@@ -236,6 +236,79 @@ export const TOOLS: Tool[] = [
   },
 
   {
+    name: 'search_by_person',
+    title: 'Find photos of a person',
+    description:
+      'Finds photos of a named person, for questions like "photos of Anna from last ' +
+      'summer". Only people the owner has named are findable; unnamed groupings and ' +
+      'anything in the vault are not visible here.',
+    scope: 'library:read',
+    input: z.object({
+      name: z.string().min(1).describe('The person’s name, as the owner labelled them'),
+      takenAfter: z.string().optional().describe('ISO 8601 date; only photos after it'),
+      takenBefore: z.string().optional().describe('ISO 8601 date; only photos before it'),
+      limit: z.number().int().min(1).max(100).default(25),
+    }),
+    run: async (args, { services, principal }) => {
+      if (!(await services.faces.isEnabled())) {
+        return text('Face grouping is switched off on this library.')
+      }
+
+      const matches = await services.faces.findPeopleByName(principal.user.id, args.name as string)
+      if (matches.length === 0) {
+        return text(`Nobody in this library is named "${args.name}".`)
+      }
+      if (matches.length > 1) {
+        return text(
+          `That matches more than one person: ${matches
+            .map((m) => m.name)
+            .join(', ')}. Ask again with the full name.`,
+        )
+      }
+
+      const person = matches[0]!
+      // photosOf already excludes vaulted and trashed photos.
+      const photos = await services.faces.photosOf(principal.user.id, person.id, 500)
+
+      const after = args.takenAfter ? new Date(args.takenAfter as string) : null
+      const before = args.takenBefore ? new Date(args.takenBefore as string) : null
+      const filtered = photos
+        .filter((p) => (after ? p.capturedAt >= after : true))
+        .filter((p) => (before ? p.capturedAt <= before : true))
+        .sort((a, b) => b.capturedAt.getTime() - a.capturedAt.getTime())
+        .slice(0, (args.limit as number) ?? 25)
+
+      if (filtered.length === 0) {
+        return text(`No photos of ${person.name} in that period.`)
+      }
+      return json({
+        person: person.name,
+        count: filtered.length,
+        photos: filtered.map((p) => summarize(toAssetShape(p))),
+      })
+    },
+  },
+
+  {
+    name: 'list_people',
+    title: 'List people',
+    description:
+      'The named people in the library, with how many photos each appears in. Unnamed ' +
+      'groupings and hidden people are not listed.',
+    scope: 'library:read',
+    input: z.object({}),
+    run: async (_args, { services, principal }) => {
+      if (!(await services.faces.isEnabled())) {
+        return text('Face grouping is switched off on this library.')
+      }
+      const everyone = await services.faces.listPeople(principal.user.id)
+      const named = everyone.filter((p) => p.name)
+      if (named.length === 0) return text('Nobody in this library has been named yet.')
+      return json(named.map((p) => ({ name: p.name, photoCount: p.faceCount })))
+    },
+  },
+
+  {
     name: 'get_library_stats',
     title: 'Library statistics',
     description:
@@ -267,6 +340,38 @@ function formatBytes(bytes: number): string {
     unit++
   }
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
+/** The service returns database rows; summarize() expects the API shape. */
+function toAssetShape(row: {
+  id: string
+  originalFilename: string
+  type: string
+  capturedAt: Date
+  description: string | null
+  favorite: boolean
+  width: number | null
+  height: number | null
+  latitude: number | null
+  longitude: number | null
+  place: string | null
+  exif: unknown
+}) {
+  return {
+    id: row.id,
+    originalFilename: row.originalFilename,
+    type: row.type,
+    capturedAt: row.capturedAt.toISOString(),
+    description: row.description,
+    favorite: row.favorite,
+    width: row.width,
+    height: row.height,
+    location:
+      row.latitude !== null && row.longitude !== null
+        ? { latitude: row.latitude, longitude: row.longitude, place: row.place }
+        : null,
+    exif: row.exif as { make: string | null; model: string | null } | null,
+  }
 }
 
 export const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]))

@@ -9,6 +9,7 @@ import { secureHeaders } from 'hono/secure-headers'
 import { createAlbumRoutes } from './api/albums.ts'
 import { createAssetRoutes } from './api/assets.ts'
 import { createAuthRoutes } from './api/auth.ts'
+import { createFaceRoutes } from './api/faces.ts'
 import { createOAuthRoutes, createWellKnownRoutes } from './api/oauth.ts'
 import { createShareRoutes } from './api/share.ts'
 import { createUploadRoutes } from './api/uploads.ts'
@@ -96,6 +97,7 @@ export function createApp({ services, webRoot }: AppOptions) {
   v1.route('/assets', createAssetRoutes())
   v1.route('/uploads', createUploadRoutes())
   v1.route('/vault', createVaultRoutes())
+  v1.route('/people', createFaceRoutes())
   v1.route('/albums', createAlbumRoutes())
 
   app.route('/api/v1', v1)

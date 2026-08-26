@@ -90,6 +90,11 @@ export class FaceService {
       (f) =>
         f.box[2] - f.box[0] >= CLUSTER.minFaceSize && f.box[3] - f.box[1] >= CLUSTER.minFaceSize,
     )
+
+    // Recorded before the early return: a landscape with no faces in it has still been
+    // looked at, and must not come back round on the next backfill.
+    await this.db.update(assets).set({ facesScannedAt: new Date() }).where(eq(assets.id, assetId))
+
     if (usable.length === 0) return 0
 
     // Re-processing a photo replaces its faces rather than duplicating them.
@@ -97,65 +102,92 @@ export class FaceService {
 
     for (const face of usable) {
       const embedding = await embedFace(recognition, path, face)
-      const personId = await this.assignPerson(asset.ownerId, embedding)
-
-      await this.db.insert(faces).values({
-        assetId,
-        ownerId: asset.ownerId,
-        personId,
-        x: Math.round(face.box[0]),
-        y: Math.round(face.box[1]),
-        width: Math.round(face.box[2] - face.box[0]),
-        height: Math.round(face.box[3] - face.box[1]),
-        score: face.score,
-        embedding: Array.from(embedding),
-      })
+      await this.recordFace(asset.ownerId, assetId, face, embedding)
     }
 
     await this.refreshCounts(asset.ownerId)
     return usable.length
   }
 
-  /** Joins the nearest person above the threshold, or opens a new one. */
-  private async assignPerson(ownerId: string, embedding: Float32Array): Promise<string> {
+  /**
+   * Files one face: finds or creates its person and stores the face, together.
+   *
+   * Both halves happen in one transaction under a per-owner advisory lock, and that
+   * matters twice over. Without the lock, workers scanning several photos of one person
+   * at once each find nobody yet and each create a separate person — three photographs
+   * of one face became three different people the first time this met the job queue.
+   * And unless the two halves are atomic, the housekeeping pass can delete a person who
+   * has no faces yet, in the instant between creating them and storing the face, leaving
+   * the face attached to nobody.
+   *
+   * Only this step is serialised. Detection and embedding, where the time actually goes,
+   * stay parallel.
+   */
+  private async recordFace(
+    ownerId: string,
+    assetId: string,
+    face: { box: [number, number, number, number]; score: number },
+    embedding: Float32Array,
+  ): Promise<string> {
     const vector = Array.from(embedding)
 
-    // The index does the narrowing; the threshold decision is made in one place.
-    const nearby = await this.db
-      .select({ id: people.id, centroid: people.centroid, faceCount: people.faceCount })
-      .from(people)
-      .where(and(eq(people.ownerId, ownerId), isNotNull(people.centroid)))
-      .orderBy(cosineDistance(people.centroid, vector))
-      .limit(MATCH_CANDIDATES)
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`faces:${ownerId}`}))`)
 
-    const candidates = nearby.map((p) => ({
-      id: p.id,
-      centroid: new Float32Array(p.centroid as number[]),
-    }))
-    const match = bestMatch(embedding, candidates)
+      // The index narrows the field; the threshold decision is made in one place.
+      const nearby = await tx
+        .select({ id: people.id, centroid: people.centroid, faceCount: people.faceCount })
+        .from(people)
+        .where(and(eq(people.ownerId, ownerId), isNotNull(people.centroid)))
+        .orderBy(cosineDistance(people.centroid, vector))
+        .limit(MATCH_CANDIDATES)
 
-    if (match) {
-      const existing = nearby.find((p) => p.id === match.id)!
-      const centroid = updateCentroid(match.centroid, existing.faceCount, embedding)
-      await this.db
-        .update(people)
-        .set({ centroid: Array.from(centroid), updatedAt: new Date() })
-        .where(eq(people.id, match.id))
-      return match.id
-    }
+      const match = bestMatch(
+        embedding,
+        nearby.map((p) => ({ id: p.id, centroid: new Float32Array(p.centroid as number[]) })),
+      )
 
-    const [created] = await this.db
-      .insert(people)
-      .values({ ownerId, centroid: vector })
-      .returning({ id: people.id })
-    return created!.id
+      let personId: string
+      if (match) {
+        const existing = nearby.find((p) => p.id === match.id)!
+        const centroid = updateCentroid(match.centroid, existing.faceCount, embedding)
+        await tx
+          .update(people)
+          .set({
+            centroid: Array.from(centroid),
+            faceCount: existing.faceCount + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(people.id, match.id))
+        personId = match.id
+      } else {
+        const [created] = await tx
+          .insert(people)
+          .values({ ownerId, centroid: vector, faceCount: 1 })
+          .returning({ id: people.id })
+        personId = created!.id
+      }
+
+      await tx.insert(faces).values({
+        assetId,
+        ownerId,
+        personId,
+        x: Math.round(face.box[0]),
+        y: Math.round(face.box[1]),
+        width: Math.round(face.box[2] - face.box[0]),
+        height: Math.round(face.box[3] - face.box[1]),
+        score: face.score,
+        embedding: vector,
+      })
+      return personId
+    })
   }
 
   /**
    * Recomputes how many faces each person has, counting only photos that are actually
    * visible — a person's count must never include a vaulted or trashed photo.
    */
-  private async refreshCounts(ownerId: string): Promise<void> {
+  async refreshCounts(ownerId: string): Promise<void> {
     await this.db.execute(sql`
       update ${people} set face_count = counted.total, cover_face_id = counted.cover
       from (
@@ -186,7 +218,13 @@ export class FaceService {
     `)
   }
 
-  /** Called when a photo is vaulted or trashed: its faces stop existing. */
+  /** Recounts after photos come or go without their faces changing — trash, restore. */
+  async refreshFor(ownerId: string): Promise<void> {
+    if (!(await this.isEnabled())) return
+    await this.refreshCounts(ownerId)
+  }
+
+  /** Called when a photo is vaulted: its faces stop existing. */
   async forgetAsset(assetId: string, ownerId: string): Promise<void> {
     await this.db.delete(faces).where(eq(faces.assetId, assetId))
     await this.refreshCounts(ownerId)

@@ -203,10 +203,10 @@ export function createAssetRoutes() {
     }),
     async (c) => {
       const services = c.get('services')
-      const count = await services.assets.trash(
-        c.get('principal').user.id,
-        c.req.valid('json').assetIds,
-      )
+      const ownerId = c.get('principal').user.id
+      const count = await services.assets.trash(ownerId, c.req.valid('json').assetIds)
+      // A trashed photo is recoverable, so its faces stay — but they stop counting.
+      await services.faces.refreshFor(ownerId)
       return c.json({ count }, 200)
     },
   )
@@ -224,10 +224,9 @@ export function createAssetRoutes() {
     }),
     async (c) => {
       const services = c.get('services')
-      const count = await services.assets.restore(
-        c.get('principal').user.id,
-        c.req.valid('json').assetIds,
-      )
+      const ownerId = c.get('principal').user.id
+      const count = await services.assets.restore(ownerId, c.req.valid('json').assetIds)
+      await services.faces.refreshFor(ownerId)
       return c.json({ count }, 200)
     },
   )

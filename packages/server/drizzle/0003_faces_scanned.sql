@@ -1,0 +1,2 @@
+ALTER TABLE "assets" ADD COLUMN "faces_scanned_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "assets_faces_pending_idx" ON "assets" USING btree ("owner_id") WHERE "assets"."faces_scanned_at" is null and "assets"."deleted_at" is null and "assets"."vaulted_at" is null;
