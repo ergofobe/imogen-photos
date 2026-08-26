@@ -16,7 +16,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await harness.db.execute(
-    sql`truncate users, assets, albums, jobs, sessions, invites, oauth_clients, oauth_tokens cascade`,
+    sql`truncate users, assets, albums, jobs, sessions, invites, oauth_clients, oauth_tokens, share_links cascade`,
   )
 })
 
@@ -699,5 +699,67 @@ describe('storage', () => {
     expect(body.trashedBytes).toBe(2048)
     expect(body.trashRetentionDays).toBeGreaterThan(0)
     expect(body.perUser.map((u) => u.email)).toContain('first@example.com')
+  })
+})
+
+describe('public links', () => {
+  const addShare = async (ownerId: string, slug: string, expired = false) => {
+    const rows = await harness.db.execute(
+      sql`insert into assets (owner_id, type, status, original_filename, mime_type, checksum, size_bytes, original_path, captured_at)
+          values (${ownerId}, 'image', 'ready', ${`${slug}.jpg`}, 'image/jpeg', ${slug.padEnd(64, '0')}, 10, ${`x/${slug}.jpg`}, now())
+          returning id`,
+    )
+    const assetId = (rows[0] as { id: string }).id
+    await harness.db.execute(
+      sql`insert into share_links (slug, asset_id, created_by, expires_at)
+          values (${slug}, ${assetId}, ${ownerId},
+                  ${expired ? sql`now() - interval '1 day'` : sql`null`})`,
+    )
+  }
+
+  test('lists what is public and says who shared it', async () => {
+    const admin = await signUp('first@example.com')
+    await addShare(admin.user.id, 'abcdef')
+
+    const response = await request('/api/v1/admin/shares', { headers: { Cookie: admin.cookie } })
+    const body = (await response.json()) as {
+      items: Array<{ slug: string; kind: string; createdByEmail: string; target: string }>
+    }
+
+    expect(body.items).toHaveLength(1)
+    expect(body.items[0]?.kind).toBe('photo')
+    expect(body.items[0]?.createdByEmail).toBe('first@example.com')
+    expect(body.items[0]?.target).toBe('abcdef.jpg')
+  })
+
+  test('a link that has run out is not counted as public', async () => {
+    const admin = await signUp('first@example.com')
+    await addShare(admin.user.id, 'expired', true)
+
+    const response = await request('/api/v1/admin/shares', { headers: { Cookie: admin.cookie } })
+    const body = (await response.json()) as { items: unknown[] }
+
+    expect(body.items).toHaveLength(0)
+  })
+
+  test('closing a link stops it working for everyone', async () => {
+    const admin = await signUp('first@example.com')
+    await addShare(admin.user.id, 'closeme')
+    expect((await request('/api/v1/share/closeme')).status).toBe(200)
+
+    const listed = await request('/api/v1/admin/shares', { headers: { Cookie: admin.cookie } })
+    const { items } = (await listed.json()) as { items: Array<{ id: string }> }
+    await asAdmin(`/api/v1/admin/shares/${items[0]?.id}`, 'DELETE', undefined, admin.cookie)
+
+    expect((await request('/api/v1/share/closeme')).status).toBe(404)
+  })
+
+  test('an ordinary account cannot see what everyone has shared', async () => {
+    await signUp('first@example.com')
+    const { cookie } = await signUp('second@example.com')
+
+    expect((await request('/api/v1/admin/shares', { headers: { Cookie: cookie } })).status).toBe(
+      404,
+    )
   })
 })

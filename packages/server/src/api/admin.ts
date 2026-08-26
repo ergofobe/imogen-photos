@@ -3,6 +3,7 @@ import {
   AdminClient,
   AdminPasswordReset,
   AdminSession,
+  AdminShareLink,
   AdminUser,
   AdminUserList,
   AdminUserUpdate,
@@ -335,6 +336,41 @@ export function createAdminRoutes() {
       if (patch.facesEnabled !== undefined) await services.faces.setEnabled(patch.facesEnabled)
       const facesEnabled = await services.faces.isEnabled()
       return c.json(await services.admin.serverSettings(facesEnabled), 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/shares',
+      tags: ['Admin'],
+      summary: 'Every link that is public right now',
+      security: security(),
+      responses: {
+        ...ok(z.object({ items: z.array(AdminShareLink) }), 'The links'),
+        ...ERROR_RESPONSES,
+      },
+    }),
+    async (c) => {
+      const services = c.get('services')
+      const items = await services.admin.shareLinks(services.config.publicUrl)
+      return c.json({ items }, 200)
+    },
+  )
+
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/shares/{id}',
+      tags: ['Admin'],
+      summary: 'Close a public link, whoever made it',
+      security: security(),
+      request: { params: IdParam },
+      responses: { ...NO_CONTENT, ...ERROR_RESPONSES },
+    }),
+    async (c) => {
+      await c.get('services').admin.revokeShareLink(c.req.valid('param').id)
+      return c.body(null, 204)
     },
   )
 

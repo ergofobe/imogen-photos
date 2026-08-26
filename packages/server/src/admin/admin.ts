@@ -1,6 +1,7 @@
 import type {
   AdminClient,
   AdminSession,
+  AdminShareLink,
   AdminUser,
   AdminUserUpdate,
   Invite,
@@ -14,6 +15,7 @@ import type {
 import { and, count, desc, eq, gt, inArray, isNull, min, ne, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
 import {
+  albums,
   assetFiles,
   assets,
   invites,
@@ -21,6 +23,7 @@ import {
   oauthClients,
   oauthTokens,
   sessions,
+  shareLinks,
   users,
 } from '../db/schema.ts'
 import { conflict, notFound } from '../lib/errors.ts'
@@ -445,6 +448,63 @@ export class AdminService {
     if (patch.trashRetentionDays !== undefined) {
       await this.settings.set('trash.retentionDays', patch.trashRetentionDays)
     }
+  }
+
+  /**
+   * Every link that is currently public, across all accounts.
+   *
+   * Revoked and expired links are left out: this answers "what can a stranger reach
+   * right now", and a list padded with dead links makes that harder to see.
+   */
+  async shareLinks(publicUrl: string): Promise<AdminShareLink[]> {
+    const rows = await this.db
+      .select({
+        id: shareLinks.id,
+        slug: shareLinks.slug,
+        albumId: shareLinks.albumId,
+        assetId: shareLinks.assetId,
+        albumName: albums.name,
+        filename: assets.originalFilename,
+        createdByEmail: users.email,
+        createdAt: shareLinks.createdAt,
+        expiresAt: shareLinks.expiresAt,
+        passwordHash: shareLinks.passwordHash,
+        allowDownload: shareLinks.allowDownload,
+      })
+      .from(shareLinks)
+      .innerJoin(users, eq(users.id, shareLinks.createdBy))
+      .leftJoin(albums, eq(albums.id, shareLinks.albumId))
+      .leftJoin(assets, eq(assets.id, shareLinks.assetId))
+      .where(
+        and(
+          isNull(shareLinks.revokedAt),
+          sql`(${shareLinks.expiresAt} is null or ${shareLinks.expiresAt} > now())`,
+        ),
+      )
+      .orderBy(desc(shareLinks.createdAt))
+
+    return rows.map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      url: `${publicUrl}/share/${row.slug}`,
+      kind: row.albumId ? ('album' as const) : ('photo' as const),
+      target: row.albumName ?? row.filename ?? 'Gone',
+      createdByEmail: row.createdByEmail,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      hasPassword: row.passwordHash !== null,
+      allowDownload: row.allowDownload,
+    }))
+  }
+
+  /** Closes a link, whoever made it. */
+  async revokeShareLink(id: string): Promise<void> {
+    const rows = await this.db
+      .update(shareLinks)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(shareLinks.id, id), isNull(shareLinks.revokedAt)))
+      .returning({ id: shareLinks.id })
+    if (rows.length === 0) throw notFound('No such link')
   }
 
   private async requireUser(userId: string) {

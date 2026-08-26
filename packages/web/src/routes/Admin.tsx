@@ -5,6 +5,7 @@ import { AdminAccounts } from '../components/admin/AdminAccounts.tsx'
 import { AdminClients } from '../components/admin/AdminClients.tsx'
 import { AdminProcessing } from '../components/admin/AdminProcessing.tsx'
 import { AdminSettings } from '../components/admin/AdminSettings.tsx'
+import { AdminShares } from '../components/admin/AdminShares.tsx'
 import { AdminStorage } from '../components/admin/AdminStorage.tsx'
 
 type SectionId = 'accounts' | 'processing' | 'clients' | 'storage' | 'settings' | 'shares'
@@ -82,18 +83,9 @@ export function Admin({ user }: { user: User }) {
           {active === 'clients' && <AdminClients />}
           {active === 'storage' && <AdminStorage />}
           {active === 'settings' && <AdminSettings />}
-          {active === 'shares' && <NotBuiltYet />}
+          {active === 'shares' && <AdminShares />}
         </main>
       </div>
-    </div>
-  )
-}
-
-/** Honest about what is not here yet, rather than an empty pane that looks broken. */
-function NotBuiltYet() {
-  return (
-    <div className="rounded-xl border border-dashed border-line p-8 text-center">
-      <p className="text-sm text-muted">This section is still being built.</p>
     </div>
   )
 }
