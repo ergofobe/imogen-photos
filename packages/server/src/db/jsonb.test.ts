@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { sql } from 'drizzle-orm'
 import { createTestDatabase } from '../test/harness.ts'
-import { assets, jobs, oauthClients, users } from './schema.ts'
+import { assets, jobs, oauthClients, settings, users } from './schema.ts'
 
 const harness = await createTestDatabase()
 const db = harness.db
@@ -54,6 +54,23 @@ describe('jsonb columns store real JSON objects', () => {
 
     expect(row.kind).toBe('object')
     expect(row.asset).toBe('abc-123')
+  })
+
+  test('a settings value round-trips as a real object', async () => {
+    await db.insert(settings).values({ key: 'faces.enabled', value: { enabled: true } })
+
+    const rows = await db.execute<{ kind: string; enabled: boolean }>(
+      sql`select jsonb_typeof(${settings.value}) as kind,
+                 (${settings.value}->>'enabled')::boolean as enabled
+          from ${settings}`,
+    )
+    const row = (Array.isArray(rows) ? rows[0] : (rows as { rows: unknown[] }).rows[0]) as {
+      kind: string
+      enabled: boolean
+    }
+
+    expect(row.kind).toBe('object')
+    expect(row.enabled).toBe(true)
   })
 
   test('a jsonb array is stored as an array, not as a string', async () => {

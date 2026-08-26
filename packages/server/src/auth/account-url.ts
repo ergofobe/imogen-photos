@@ -26,5 +26,5 @@ export function deriveAccountUrl(issuer: string, configured?: string): string | 
     return new URL(`${realm[1]}/account`, url.origin).toString()
   }
 
-  return url.origin + '/'
+  return `${url.origin}/`
 }

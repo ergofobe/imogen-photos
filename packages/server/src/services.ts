@@ -3,6 +3,8 @@ import { OAuthService } from './auth/oauth.ts'
 import { OidcService } from './auth/oidc.ts'
 import { SessionService } from './auth/sessions.ts'
 import { createDatabase, type Database } from './db/index.ts'
+import { FaceService } from './faces/faces.ts'
+import { ModelStore } from './faces/models.ts'
 import { registerMaintenanceJobs } from './jobs/maintenance.ts'
 import { JobQueue } from './jobs/queue.ts'
 import type { Config } from './lib/config.ts'
@@ -24,6 +26,8 @@ export type Services = {
   assets: AssetService
   albums: AlbumService
   vault: VaultService
+  faces: FaceService
+  models: ModelStore
   ingest: IngestService
   library: LocalStorage
   thumbnails: LocalStorage
@@ -52,6 +56,8 @@ export function createServices(config: Config, database?: Database): Services {
   const assets = new AssetService(db)
   const albums = new AlbumService(db)
   const vault = new VaultService(db, { secret: config.secret })
+  const models = new ModelStore(config.modelsDir)
+  const faces = new FaceService(db, models, (p) => library.absolutePath(p))
   const ingest = new IngestService(db, library, thumbnails, pipeline, (name, payload) =>
     queue.enqueue(name, payload),
   )
@@ -74,6 +80,8 @@ export function createServices(config: Config, database?: Database): Services {
     assets,
     albums,
     vault,
+    faces,
+    models,
     ingest,
     library,
     thumbnails,

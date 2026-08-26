@@ -15,6 +15,13 @@
       "when": 1787763450288,
       "tag": "0001_vault",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787768546734,
+      "tag": "0002_faces",
+      "breakpoints": true
     }
   ]
 }

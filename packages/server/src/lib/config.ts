@@ -60,6 +60,7 @@ export type Config = {
   libraryDir: string
   thumbsDir: string
   uploadsDir: string
+  modelsDir: string
   allowSignup: boolean
   oidc: OidcConfig | null
   ffmpegPath: string
@@ -107,7 +108,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const libraryDir = join(dataDir, 'library')
   const thumbsDir = join(dataDir, 'thumbs')
   const uploadsDir = join(dataDir, 'uploads')
-  for (const dir of [dataDir, libraryDir, thumbsDir, uploadsDir])
+  const modelsDir = join(dataDir, 'models')
+  for (const dir of [dataDir, libraryDir, thumbsDir, uploadsDir, modelsDir])
     mkdirSync(dir, { recursive: true })
 
   const oidcFieldsPresent =
@@ -131,6 +133,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     libraryDir,
     thumbsDir,
     uploadsDir,
+    modelsDir,
     allowSignup: e.IMOGEN_ALLOW_SIGNUP,
     oidc: oidcFieldsPresent
       ? {

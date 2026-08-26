@@ -61,6 +61,7 @@ export function createTestConfig(overrides: Partial<Config> = {}): Config {
     libraryDir: join(dataDir, 'library'),
     thumbsDir: join(dataDir, 'thumbs'),
     uploadsDir: join(dataDir, 'uploads'),
+    modelsDir: join(dataDir, 'models'),
     allowSignup: true,
     oidc: null,
     ffmpegPath: 'ffmpeg',

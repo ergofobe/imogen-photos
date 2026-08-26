@@ -370,9 +370,82 @@ export const jobs = pgTable(
   (t) => [index('jobs_claim_idx').on(t.status, t.runAt).where(sql`${t.status} = 'queued'`)],
 )
 
+/**
+ * A named (or not yet named) person: one cluster of faces the library believes belong
+ * to the same human.
+ */
+export const people = pgTable(
+  'people',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Null until someone names them; an unnamed cluster is still browsable. */
+    name: text('name'),
+    /** The face shown as this person's thumbnail. */
+    coverFaceId: uuid('cover_face_id'),
+    /** Hidden people stay out of the people list without losing their grouping. */
+    hidden: boolean('hidden').notNull().default(false),
+    /**
+     * Running mean of this person's face embeddings, so matching a new face is one
+     * index lookup rather than a comparison against every face they appear in.
+     */
+    centroid: vector('centroid', { dimensions: 512 }),
+    faceCount: integer('face_count').notNull().default(0),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    index('people_owner_idx').on(t.ownerId, t.hidden),
+    index('people_centroid_idx')
+      .using('hnsw', t.centroid.op('vector_cosine_ops'))
+      .where(sql`${t.centroid} is not null`),
+  ],
+)
+
+/** One detected face in one photo. */
+export const faces = pgTable(
+  'faces',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    assetId: uuid('asset_id')
+      .notNull()
+      .references(() => assets.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    personId: uuid('person_id').references(() => people.id, { onDelete: 'set null' }),
+    /** Bounding box in the original image's pixels. */
+    x: integer('x').notNull(),
+    y: integer('y').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    score: real('score').notNull(),
+    embedding: vector('embedding', { dimensions: 512 }).notNull(),
+    /** Set when a human confirmed or corrected the grouping, so re-clustering leaves it alone. */
+    confirmed: boolean('confirmed').notNull().default(false),
+    createdAt,
+  },
+  (t) => [
+    index('faces_asset_idx').on(t.assetId),
+    index('faces_person_idx').on(t.personId),
+    index('faces_owner_idx').on(t.ownerId),
+    index('faces_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
+  ],
+)
+
+/**
+ * Server settings.
+ *
+ * Values are always objects, never bare scalars. Bun's SQL driver serializes an object
+ * bound to a jsonb parameter but binds a boolean or number natively, which Postgres
+ * refuses to coerce — and pre-stringifying stores the JSON *string* "true" rather than
+ * true. An envelope avoids both.
+ */
 export const settings = pgTable('settings', {
   key: text('key').primaryKey(),
-  value: json<unknown>('value').notNull(),
+  value: json<Record<string, unknown>>('value').notNull(),
   updatedAt,
 })
 
@@ -383,4 +456,6 @@ export type AlbumRow = typeof albums.$inferSelect
 export type OAuthClientRow = typeof oauthClients.$inferSelect
 export type OAuthTokenRow = typeof oauthTokens.$inferSelect
 export type JobRow = typeof jobs.$inferSelect
+export type FaceRow = typeof faces.$inferSelect
+export type PersonRow = typeof people.$inferSelect
 export type UploadSessionRow = typeof uploadSessions.$inferSelect
