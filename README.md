@@ -1,3 +1,14 @@
+> [!IMPORTANT]
+> **This repository has moved and is archived.** imogen was split in two:
+>
+> - **[imogen-server](https://github.com/ergofobe/imogen-server)** — the server, the web
+>   application, and the MCP bridge. Development continues there.
+> - **[imogen-sdk](https://github.com/ergofobe/imogen-sdk)** — the client libraries, now in
+>   TypeScript, Rust, Python, Swift and Kotlin, together with the API contract they share.
+>
+> Both carry this repository's history for the files they took with them. Nothing here is
+> maintained; please open issues against whichever of the two you mean.
+
 <div align="center">
   <img src="packages/web/public/icons/icon.svg" width="72" height="72" alt="">
   <h1>imogen</h1>
